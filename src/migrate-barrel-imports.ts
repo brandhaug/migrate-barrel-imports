@@ -116,12 +116,12 @@ async function getPackageInfo(packagePath: string): Promise<PackageJson> {
 async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindExportsParams): Promise<ExportInfo[]> {
   const exports: ExportInfo[] = []
 
-  console.log(`Scanning for TypeScript files in: ${packagePath}`)
-  const allFiles = await fg('**/*.{ts,tsx}', {
+  console.log(`Scanning for TypeScript and JavaScript files in: ${packagePath}`)
+  const allFiles = await fg('**/*.{ts,tsx,js,jsx}', {
     cwd: packagePath,
     ignore: ['**/node_modules/**', '**/dist/**', '**/build/**']
   })
-  console.log(`Found ${allFiles.length} TypeScript files`)
+  console.log(`Found ${allFiles.length} files`)
 
   for (const file of allFiles) {
     // Mark files that match ignore patterns but still process them
@@ -270,15 +270,15 @@ async function findImports({ packageName, monorepoRoot }: FindImportsParams): Pr
   try {
     const allFiles = new Set<string>()
 
-    // Find all TypeScript files in the monorepo
-    const files = await fg(['**/*.{ts,tsx}'], {
+    // Find all TypeScript and JavaScript files in the monorepo
+    const files = await fg(['**/*.{ts,tsx,js,jsx}'], {
       cwd: monorepoRoot,
       absolute: true,
       ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'],
       followSymbolicLinks: false
     })
 
-    console.log(`Found ${files.length} TypeScript files to scan`)
+    console.log(`Found ${files.length} files to scan`)
 
     // Scan each file for imports
     for (const file of files) {
