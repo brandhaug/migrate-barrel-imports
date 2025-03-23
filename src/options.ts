@@ -7,16 +7,16 @@
  * @property {boolean} [includeExtension] - Whether to include file extensions in imports
  */
 export type Options = {
-	sourcePath: string
-	targetPath: string
-	ignoreSourceFiles: string[]
-	ignoreTargetFiles: string[]
-	includeExtension?: boolean
+  sourcePath: string
+  targetPath: string
+  ignoreSourceFiles: string[]
+  ignoreTargetFiles: string[]
+  includeExtension?: boolean
 }
 
 export const defaultOptions: Omit<Options, 'sourcePath'> = {
-	targetPath: '.',
-	ignoreSourceFiles: [],
-	ignoreTargetFiles: [],
-	includeExtension: false
+  targetPath: '.',
+  ignoreSourceFiles: [],
+  ignoreTargetFiles: [],
+  includeExtension: false
 }
