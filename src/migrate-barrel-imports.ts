@@ -21,13 +21,20 @@ import _generate from '@babel/generator'
 import { parse } from '@babel/parser'
 import type { NodePath } from '@babel/traverse'
 import _traverse from '@babel/traverse'
-import type {
-	ExportDefaultDeclaration,
-	ExportNamedDeclaration,
-	ImportDeclaration,
-	VariableDeclarator
+import {
+	type ExportDefaultDeclaration,
+	type ExportNamedDeclaration,
+	type ImportDeclaration,
+	type VariableDeclarator,
+	importDeclaration,
+	importSpecifier,
+	isExportSpecifier,
+	isFunctionDeclaration,
+	isIdentifier,
+	isImportSpecifier,
+	isVariableDeclaration,
+	stringLiteral
 } from '@babel/types'
-import * as t from '@babel/types'
 import fg from 'fast-glob'
 import micromatch from 'micromatch'
 import type { Options } from './options'
@@ -179,11 +186,11 @@ async function findExports({
 
 					// Handle variable declarations with exports
 					if (path.node.declaration) {
-						if (t.isVariableDeclaration(path.node.declaration)) {
+						if (isVariableDeclaration(path.node.declaration)) {
 							const declarations = path.node.declaration.declarations
 							const namedExports = declarations
 								.map((d: VariableDeclarator) => {
-									if (t.isIdentifier(d.id)) {
+									if (isIdentifier(d.id)) {
 										return d.id.name
 									}
 									return null
@@ -205,9 +212,9 @@ async function findExports({
 					// Handle export specifiers
 					const namedExports = path.node.specifiers
 						.map((s) => {
-							if (t.isExportSpecifier(s)) {
+							if (isExportSpecifier(s)) {
 								const exported = s.exported
-								return t.isIdentifier(exported) ? exported.name : exported.value
+								return isIdentifier(exported) ? exported.name : exported.value
 							}
 							return null
 						})
@@ -225,14 +232,14 @@ async function findExports({
 				ExportDefaultDeclaration(path: NodePath<ExportDefaultDeclaration>) {
 					console.log(`Found default export in ${file}`)
 					const exported = path.node.declaration
-					if (t.isIdentifier(exported)) {
+					if (isIdentifier(exported)) {
 						console.log(`Default export name: ${exported.name}`)
 						exports.push({
 							source: file,
 							exports: [exported.name],
 							isIgnored
 						})
-					} else if (t.isFunctionDeclaration(exported) && exported.id) {
+					} else if (isFunctionDeclaration(exported) && exported.id) {
 						console.log(`Default export name: ${exported.id.name}`)
 						exports.push({
 							source: file,
@@ -391,12 +398,12 @@ async function updateImports({
 					importCount++
 					console.log(`Found import from ${packageName}`)
 					const specifiers = path.node.specifiers
-					const newImports: t.ImportDeclaration[] = []
+					const newImports: ImportDeclaration[] = []
 
 					for (const specifier of specifiers) {
-						if (t.isImportSpecifier(specifier)) {
+						if (isImportSpecifier(specifier)) {
 							const imported = specifier.imported
-							const importName = t.isIdentifier(imported)
+							const importName = isIdentifier(imported)
 								? imported.name
 								: imported.value
 							const exportInfo = exports.find((e) =>
@@ -418,9 +425,9 @@ async function updateImports({
 									? `${packageName}/${exportInfo.source}`
 									: `${packageName}/${exportInfo.source.replace(/\.(js|jsx|ts|tsx|mjs|cjs)$/, '')}`
 								newImports.push(
-									t.importDeclaration(
-										[t.importSpecifier(specifier.local, specifier.imported)],
-										t.stringLiteral(importPath)
+									importDeclaration(
+										[importSpecifier(specifier.local, specifier.imported)],
+										stringLiteral(importPath)
 									)
 								)
 								modified = true
@@ -434,8 +441,8 @@ async function updateImports({
 						// If there are any remaining specifiers that weren't moved to direct imports,
 						// create a new import declaration for them
 						const remainingSpecifiers = specifiers.filter((s) => {
-							if (!t.isImportSpecifier(s)) return true
-							const importName = t.isIdentifier(s.imported)
+							if (!isImportSpecifier(s)) return true
+							const importName = isIdentifier(s.imported)
 								? s.imported.name
 								: s.imported.value
 							const exportInfo = exports.find((e) =>
@@ -446,9 +453,9 @@ async function updateImports({
 
 						if (remainingSpecifiers.length > 0) {
 							newImports.unshift(
-								t.importDeclaration(
+								importDeclaration(
 									remainingSpecifiers,
-									t.stringLiteral(packageName)
+									stringLiteral(packageName)
 								)
 							)
 						}
