@@ -26,13 +26,20 @@ import {
   type ExportDefaultDeclaration,
   type ExportNamedDeclaration,
   type ImportDeclaration,
+  type ImportDefaultSpecifier,
+  type ImportNamespaceSpecifier,
+  type ImportSpecifier,
   type VariableDeclarator,
   importDeclaration,
   importSpecifier,
+  isClassDeclaration,
   isExportSpecifier,
   isFunctionDeclaration,
   isIdentifier,
   isImportSpecifier,
+  isTSEnumDeclaration,
+  isTSInterfaceDeclaration,
+  isTSTypeAliasDeclaration,
   isVariableDeclaration,
   stringLiteral
 } from '@babel/types'
@@ -74,6 +81,7 @@ interface FindExportsParams {
   ignoreSourceFiles?: string[]
   stats?: {
     sourceFilesSkipped: number
+    warnings: string[]
   }
 }
 
@@ -87,6 +95,10 @@ interface UpdateImportsParams {
   packageName: string
   exports: ExportInfo[]
   includeExtension?: boolean
+  warnings?: string[]
+  stats?: {
+    errors: number
+  }
 }
 
 /**
@@ -173,10 +185,15 @@ async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindE
       traverse(ast, {
         ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
           console.log(`Found named export in ${file}`)
-          // Skip exports from other files (we only want direct exports)
+
+          // Handle re-exports from external packages
           if (path.node.source) {
-            console.log(`Skipping re-export from ${path.node.source.value}`)
-            return
+            const sourceValue = path.node.source.value
+            // Skip re-exports from node_modules or external packages
+            if (sourceValue.includes('node_modules') || !sourceValue.startsWith('.')) {
+              console.log(`Skipping re-export from external package: ${sourceValue}`)
+              return
+            }
           }
 
           // Handle variable declarations with exports
@@ -200,6 +217,53 @@ async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindE
                   isIgnored
                 })
               }
+            } else if (isFunctionDeclaration(path.node.declaration)) {
+              // Handle function declarations, including those that use browser globals
+              const functionName = path.node.declaration.id?.name
+              if (functionName) {
+                console.log(`Found function export: ${functionName}`)
+                exports.push({
+                  source: file,
+                  exports: [functionName],
+                  isIgnored
+                })
+              }
+            } else if (isTSEnumDeclaration(path.node.declaration)) {
+              // Handle enum exports
+              const enumName = path.node.declaration.id.name
+              console.log(`Found enum export: ${enumName}`)
+              exports.push({
+                source: file,
+                exports: [enumName],
+                isIgnored
+              })
+            } else if (isTSInterfaceDeclaration(path.node.declaration)) {
+              // Handle interface exports
+              const interfaceName = path.node.declaration.id.name
+              console.log(`Found interface export: ${interfaceName}`)
+              exports.push({
+                source: file,
+                exports: [interfaceName],
+                isIgnored
+              })
+            } else if (isTSTypeAliasDeclaration(path.node.declaration)) {
+              // Handle type alias exports
+              const typeName = path.node.declaration.id.name
+              console.log(`Found type alias export: ${typeName}`)
+              exports.push({
+                source: file,
+                exports: [typeName],
+                isIgnored
+              })
+            } else if (isClassDeclaration(path.node.declaration) && path.node.declaration.id) {
+              // Handle class exports
+              const className = path.node.declaration.id.name
+              console.log(`Found class export: ${className}`)
+              exports.push({
+                source: file,
+                exports: [className],
+                isIgnored
+              })
             }
             return
           }
@@ -339,7 +403,9 @@ async function updateImports({
   filePath,
   packageName,
   exports,
-  includeExtension = true
+  includeExtension = true,
+  warnings,
+  stats
 }: UpdateImportsParams): Promise<void> {
   console.log(`\nProcessing file: ${filePath}`)
   const content = readFileSync(filePath, 'utf-8')
@@ -378,14 +444,31 @@ async function updateImports({
 
     let modified = false
     let importCount = 0
+    // Track processed imports to prevent loops
+    const processedImports = new Set<string>()
 
     traverse(ast, {
       ImportDeclaration(path: NodePath<ImportDeclaration>) {
-        if (path.node.source.value === packageName) {
+        const importSource = path.node.source.value
+        // Skip if we've already processed this import
+        if (processedImports.has(importSource)) {
+          return
+        }
+
+        if (importSource === packageName) {
           importCount++
           console.log(`Found import from ${packageName}`)
           const specifiers = path.node.specifiers
-          const newImports: ImportDeclaration[] = []
+
+          // Group imports by source file
+          type ImportSpec = {
+            local: ImportSpecifier['local']
+            imported: ImportSpecifier['imported']
+          }
+          const importsBySource = new Map<string, ImportSpec[]>()
+          const remainingSpecifiers: Array<ImportSpecifier | ImportDefaultSpecifier | ImportNamespaceSpecifier> = []
+          let hasReExports = false
+          let hasDirectExports = false
 
           for (const specifier of specifiers) {
             if (isImportSpecifier(specifier)) {
@@ -398,38 +481,73 @@ async function updateImports({
                 // Skip modifying imports from ignored files
                 if (exportInfo.isIgnored) {
                   console.log(`  Keeping original import for ignored file: ${exportInfo.source}`)
+                  remainingSpecifiers.push(specifier)
                   continue
                 }
                 const importPath = includeExtension
                   ? `${packageName}/${exportInfo.source}`
                   : `${packageName}/${exportInfo.source.replace(/\.(js|jsx|ts|tsx|mjs|cjs)$/, '')}`
-                newImports.push(
-                  importDeclaration([importSpecifier(specifier.local, specifier.imported)], stringLiteral(importPath))
-                )
+
+                if (!importsBySource.has(importPath)) {
+                  importsBySource.set(importPath, [])
+                }
+                importsBySource.get(importPath)?.push({ local: specifier.local, imported: specifier.imported })
                 modified = true
+                hasDirectExports = true
               } else {
-                console.log(`  Warning: Could not find export ${importName}`)
+                // Check if this is a re-export from an external package
+                const isReExport = exports.some((e) => e.source.includes('node_modules') || !e.source.startsWith('.'))
+                if (isReExport) {
+                  const warning = `Skipping re-export from external package: ${importName} in "${filePath}"`
+                  console.log(`  ${warning}`)
+                  if (warnings) {
+                    warnings.push(warning)
+                  }
+                  remainingSpecifiers.push(specifier)
+                  hasReExports = true
+                  continue
+                }
+                const warning = `Could not find export ${importName} in ${filePath}`
+                console.log(`  Warning: ${warning}`)
+                if (warnings) {
+                  warnings.push(warning)
+                }
+                remainingSpecifiers.push(specifier)
               }
+            } else {
+              remainingSpecifiers.push(specifier)
             }
           }
 
-          if (newImports.length > 0) {
-            // If there are any remaining specifiers that weren't moved to direct imports,
-            // create a new import declaration for them
-            const remainingSpecifiers = specifiers.filter((s) => {
-              if (!isImportSpecifier(s)) return true
-              const importName = isIdentifier(s.imported) ? s.imported.name : s.imported.value
-              const exportInfo = exports.find((e) => e.exports.includes(importName))
-              return !exportInfo || exportInfo.isIgnored
-            })
-
-            if (remainingSpecifiers.length > 0) {
-              newImports.unshift(importDeclaration(remainingSpecifiers, stringLiteral(packageName)))
-            }
-
-            path.replaceWithMultiple(newImports)
-            console.log('  Replaced import with direct imports from source files')
+          // If we have no direct exports to migrate, keep the original import
+          if (!hasDirectExports) {
+            console.log('  Keeping original import due to no direct exports to migrate')
+            processedImports.add(importSource)
+            return
           }
+
+          // Create new import declarations
+          const newImports: ImportDeclaration[] = []
+
+          // Add remaining imports first (including re-exports)
+          if (remainingSpecifiers.length > 0) {
+            newImports.push(importDeclaration(remainingSpecifiers, stringLiteral(packageName)))
+          }
+
+          // Add grouped imports for direct exports
+          for (const [importPath, specifiers] of importsBySource.entries()) {
+            newImports.push(
+              importDeclaration(
+                specifiers.map((s) => importSpecifier(s.local, s.imported)),
+                stringLiteral(importPath)
+              )
+            )
+          }
+
+          path.replaceWithMultiple(newImports)
+          console.log('  Replaced import with direct imports from source files')
+          // Mark the original import as processed
+          processedImports.add(importSource)
         }
       }
     })
@@ -451,6 +569,9 @@ async function updateImports({
       console.log('No imports found to update')
     }
   } catch (error) {
+    if (stats) {
+      stats.errors++
+    }
     console.error(`Error processing ${filePath}:`, error)
   }
 }
@@ -486,7 +607,8 @@ export async function migrateBarrelImports(options: MigrationOptions): Promise<v
     sourceFilesSkipped: 0,
     targetFilesFound: [] as string[],
     packagesProcessed: 0,
-    packagesSkipped: 0
+    packagesSkipped: 0,
+    warnings: [] as string[]
   }
 
   // Find all directories matching the glob pattern
@@ -555,7 +677,9 @@ export async function migrateBarrelImports(options: MigrationOptions): Promise<v
             filePath: file,
             packageName: packageInfo.name,
             exports: exports,
-            includeExtension: options.includeExtension
+            includeExtension: options.includeExtension,
+            warnings: stats.warnings,
+            stats
           })
           const updatedContent = readFileSync(file, 'utf-8')
 
@@ -592,6 +716,13 @@ export async function migrateBarrelImports(options: MigrationOptions): Promise<v
   console.log(`Target files with imports updated: ${stats.importsUpdated}`)
   console.log(`Target files with no changes needed: ${stats.filesWithNoUpdates}`)
   console.log(`Target files skipped: ${stats.filesSkipped}`)
+
+  if (stats.warnings.length > 0) {
+    console.log('\nWarnings:')
+    for (const warning of stats.warnings) {
+      console.log(`  - ${warning}`)
+    }
+  }
 
   if (stats.errors > 0) {
     console.log(`\nWarning: ${stats.errors} errors encountered during processing`)

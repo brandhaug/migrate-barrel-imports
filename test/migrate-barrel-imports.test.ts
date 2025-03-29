@@ -321,4 +321,388 @@ export const UserForm = () => {
     // Clean up
     fs.rmSync(monorepoDir, { recursive: true, force: true })
   })
+
+  it('should migrate barrel imports for TypeScript enums', async () => {
+    // Create monorepo structure in temp directory
+    const monorepoDir = path.join(tmpDir, `test-monorepo-enum-${randomUUID()}`)
+    const sourceDir = path.join(monorepoDir, 'packages/source-lib')
+    const targetDir = path.join(monorepoDir, 'packages/target-app')
+
+    // Create directories
+    fs.mkdirSync(sourceDir, { recursive: true })
+    fs.mkdirSync(targetDir, { recursive: true })
+    fs.mkdirSync(path.join(sourceDir, 'src'), { recursive: true })
+    fs.mkdirSync(path.join(targetDir, 'src'), { recursive: true })
+
+    // Create source package with enum exports
+    fs.writeFileSync(
+      path.join(sourceDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/source-lib',
+        version: '1.0.0',
+        main: 'src/index.ts',
+        types: 'src/index.ts'
+      })
+    )
+
+    // Create source files with enum exports
+    fs.writeFileSync(
+      path.join(sourceDir, 'src/enums.ts'),
+      `
+export enum Status {
+  PENDING = 'PENDING',
+  SUCCESS = 'SUCCESS',
+  ERROR = 'ERROR'
+}
+
+export enum Direction {
+  UP = 'UP',
+  DOWN = 'DOWN',
+  LEFT = 'LEFT',
+  RIGHT = 'RIGHT'
+}
+`
+    )
+
+    // Create barrel file
+    fs.writeFileSync(
+      path.join(sourceDir, 'src/index.ts'),
+      `
+export * from "./enums";
+`
+    )
+
+    // Create target package that imports from source
+    fs.writeFileSync(
+      path.join(targetDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/target-app',
+        version: '1.0.0',
+        dependencies: {
+          '@test/source-lib': '1.0.0'
+        }
+      })
+    )
+
+    // Create target file with barrel imports
+    fs.writeFileSync(
+      path.join(targetDir, 'src/status-handler.ts'),
+      `
+import { Status, Direction } from "@test/source-lib";
+
+export const handleStatus = (status: Status): void => {
+  console.log(\`Current status: \${status}\`);
+};
+
+export const move = (direction: Direction): void => {
+  console.log(\`Moving \${direction}\`);
+};
+`
+    )
+
+    // Run migration
+    await runMigrateBarrelImports({
+      sourcePath: sourceDir,
+      targetPath: monorepoDir,
+      includeExtension: true
+    })
+
+    // Read the updated file content
+    const updatedContent = fs.readFileSync(path.join(targetDir, 'src/status-handler.ts'), 'utf-8')
+
+    // Verify imports were updated to direct paths
+    expect(updatedContent).toContain('import { Status, Direction } from "@test/source-lib/src/enums.ts"')
+    expect(updatedContent).not.toContain('import { Status, Direction } from "@test/source-lib"')
+
+    // Clean up
+    fs.rmSync(monorepoDir, { recursive: true, force: true })
+  })
+
+  it('should migrate barrel imports for TypeScript interfaces', async () => {
+    // Create monorepo structure in temp directory
+    const monorepoDir = path.join(tmpDir, `test-monorepo-interface-${randomUUID()}`)
+    const sourceDir = path.join(monorepoDir, 'packages/source-lib')
+    const targetDir = path.join(monorepoDir, 'packages/target-app')
+
+    // Create directories
+    fs.mkdirSync(sourceDir, { recursive: true })
+    fs.mkdirSync(targetDir, { recursive: true })
+    fs.mkdirSync(path.join(sourceDir, 'src'), { recursive: true })
+    fs.mkdirSync(path.join(targetDir, 'src'), { recursive: true })
+
+    // Create source package with interface exports
+    fs.writeFileSync(
+      path.join(sourceDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/source-lib',
+        version: '1.0.0',
+        main: 'src/index.ts',
+        types: 'src/index.ts'
+      })
+    )
+
+    // Create source files with interface exports
+    fs.writeFileSync(
+      path.join(sourceDir, 'src/types.ts'),
+      `
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface Config {
+  apiUrl: string;
+  timeout: number;
+  retries: number;
+}
+`
+    )
+
+    // Create barrel file
+    fs.writeFileSync(
+      path.join(sourceDir, 'src/index.ts'),
+      `
+export * from "./types";
+`
+    )
+
+    // Create target package that imports from source
+    fs.writeFileSync(
+      path.join(targetDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/target-app',
+        version: '1.0.0',
+        dependencies: {
+          '@test/source-lib': '1.0.0'
+        }
+      })
+    )
+
+    // Create target file with barrel imports
+    fs.writeFileSync(
+      path.join(targetDir, 'src/user-service.ts'),
+      `
+import { User, Config } from "@test/source-lib";
+
+export const createUser = (user: User): void => {
+  console.log(\`Creating user: \${user.name}\`);
+};
+
+export const loadConfig = (config: Config): void => {
+  console.log(\`Loading config: \${config.apiUrl}\`);
+};
+`
+    )
+
+    // Run migration
+    await runMigrateBarrelImports({
+      sourcePath: sourceDir,
+      targetPath: monorepoDir,
+      includeExtension: true
+    })
+
+    // Read the updated file content
+    const updatedContent = fs.readFileSync(path.join(targetDir, 'src/user-service.ts'), 'utf-8')
+
+    // Verify imports were updated to direct paths
+    expect(updatedContent).toContain('import { User, Config } from "@test/source-lib/src/types.ts"')
+    expect(updatedContent).not.toContain('import { User, Config } from "@test/source-lib"')
+
+    // Clean up
+    fs.rmSync(monorepoDir, { recursive: true, force: true })
+  })
+
+  it('should migrate barrel imports for TypeScript type aliases', async () => {
+    // Create monorepo structure in temp directory
+    const monorepoDir = path.join(tmpDir, `test-monorepo-type-${randomUUID()}`)
+    const sourceDir = path.join(monorepoDir, 'packages/source-lib')
+    const targetDir = path.join(monorepoDir, 'packages/target-app')
+
+    // Create directories
+    fs.mkdirSync(sourceDir, { recursive: true })
+    fs.mkdirSync(targetDir, { recursive: true })
+    fs.mkdirSync(path.join(sourceDir, 'src'), { recursive: true })
+    fs.mkdirSync(path.join(targetDir, 'src'), { recursive: true })
+
+    // Create source package with type exports
+    fs.writeFileSync(
+      path.join(sourceDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/source-lib',
+        version: '1.0.0',
+        main: 'src/index.ts',
+        types: 'src/index.ts'
+      })
+    )
+
+    // Create source files with type exports
+    fs.writeFileSync(
+      path.join(sourceDir, 'src/types.ts'),
+      `
+export type Status = 'pending' | 'success' | 'error';
+
+export type Coordinates = {
+  x: number;
+  y: number;
+};
+
+export type Callback<T> = (data: T) => void;
+`
+    )
+
+    // Create barrel file
+    fs.writeFileSync(
+      path.join(sourceDir, 'src/index.ts'),
+      `
+export * from "./types";
+`
+    )
+
+    // Create target package that imports from source
+    fs.writeFileSync(
+      path.join(targetDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/target-app',
+        version: '1.0.0',
+        dependencies: {
+          '@test/source-lib': '1.0.0'
+        }
+      })
+    )
+
+    // Create target file with barrel imports
+    fs.writeFileSync(
+      path.join(targetDir, 'src/position-handler.ts'),
+      `
+import { Status, Coordinates, Callback } from "@test/source-lib";
+
+export const updatePosition = (pos: Coordinates): void => {
+  console.log(\`Position: (\${pos.x}, \${pos.y})\`);
+};
+
+export const handleStatus = (status: Status, callback: Callback<string>): void => {
+  callback(\`Status changed to: \${status}\`);
+};
+`
+    )
+
+    // Run migration
+    await runMigrateBarrelImports({
+      sourcePath: sourceDir,
+      targetPath: monorepoDir,
+      includeExtension: true
+    })
+
+    // Read the updated file content
+    const updatedContent = fs.readFileSync(path.join(targetDir, 'src/position-handler.ts'), 'utf-8')
+
+    // Verify imports were updated to direct paths
+    expect(updatedContent).toContain('import { Status, Coordinates, Callback } from "@test/source-lib/src/types.ts"')
+    expect(updatedContent).not.toContain('import { Status, Coordinates, Callback } from "@test/source-lib"')
+
+    // Clean up
+    fs.rmSync(monorepoDir, { recursive: true, force: true })
+  })
+
+  it('should migrate barrel imports for TypeScript classes', async () => {
+    // Create monorepo structure in temp directory
+    const monorepoDir = path.join(tmpDir, `test-monorepo-class-${randomUUID()}`)
+    const sourceDir = path.join(monorepoDir, 'packages/source-lib')
+    const targetDir = path.join(monorepoDir, 'packages/target-app')
+
+    // Create directories
+    fs.mkdirSync(sourceDir, { recursive: true })
+    fs.mkdirSync(targetDir, { recursive: true })
+    fs.mkdirSync(path.join(sourceDir, 'src'), { recursive: true })
+    fs.mkdirSync(path.join(targetDir, 'src'), { recursive: true })
+
+    // Create source package with class exports
+    fs.writeFileSync(
+      path.join(sourceDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/source-lib',
+        version: '1.0.0',
+        main: 'src/index.ts',
+        types: 'src/index.ts'
+      })
+    )
+
+    // Create source files with class exports
+    fs.writeFileSync(
+      path.join(sourceDir, 'src/classes.ts'),
+      `
+export class Logger {
+  constructor(private prefix: string) {}
+
+  log(message: string): void {
+    console.log(\`[\${this.prefix}] \${message}\`);
+  }
+}
+
+export class Timer {
+  private startTime: number;
+
+  constructor() {
+    this.startTime = Date.now();
+  }
+
+  getElapsed(): number {
+    return Date.now() - this.startTime;
+  }
+}
+`
+    )
+
+    // Create barrel file
+    fs.writeFileSync(
+      path.join(sourceDir, 'src/index.ts'),
+      `
+export * from "./classes";
+`
+    )
+
+    // Create target package that imports from source
+    fs.writeFileSync(
+      path.join(targetDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/target-app',
+        version: '1.0.0',
+        dependencies: {
+          '@test/source-lib': '1.0.0'
+        }
+      })
+    )
+
+    // Create target file with barrel imports
+    fs.writeFileSync(
+      path.join(targetDir, 'src/app.ts'),
+      `
+import { Logger, Timer } from "@test/source-lib";
+
+const logger = new Logger('App');
+const timer = new Timer();
+
+logger.log('Application started');
+console.log(\`Elapsed time: \${timer.getElapsed()}ms\`);
+`
+    )
+
+    // Run migration
+    await runMigrateBarrelImports({
+      sourcePath: sourceDir,
+      targetPath: monorepoDir,
+      includeExtension: true
+    })
+
+    // Read the updated file content
+    const updatedContent = fs.readFileSync(path.join(targetDir, 'src/app.ts'), 'utf-8')
+
+    // Verify imports were updated to direct paths
+    expect(updatedContent).toContain('import { Logger, Timer } from "@test/source-lib/src/classes.ts"')
+    expect(updatedContent).not.toContain('import { Logger, Timer } from "@test/source-lib"')
+
+    // Clean up
+    fs.rmSync(monorepoDir, { recursive: true, force: true })
+  })
 })
