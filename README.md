@@ -30,7 +30,7 @@ npx migrate-barrel-imports <source-path> [target-path] [options]
 
 ### Arguments
 
-- `source-path`: Path to the package containing barrel files (required)
+- `source-path`: Directory pattern for source packages (e.g. "libs/*", "packages/{ui,core}") (required)
 - `target-path`: Path to the directory where imports should be migrated (default: current directory)
 
 ### Options
@@ -44,11 +44,17 @@ Options can be specified either before or after the arguments:
 ## Example
 
 ```bash
-# Options after arguments
+# Migrate a single package
 migrate-barrel-imports ./packages/my-lib --ignore-source-files "**/__tests__/**,**/__mocks__/**" --ignore-target-files "**/*.test.ts"
 
-# Options before arguments
-migrate-barrel-imports --no-extension ./packages/my-lib .
+# Migrate multiple packages using glob pattern
+migrate-barrel-imports "libs/*" --no-extension
+
+# Migrate specific packages using glob pattern
+migrate-barrel-imports "packages/{ui,core,utils}" --ignore-target-files "**/*.test.ts"
+
+# Migrate all packages in a monorepo
+migrate-barrel-imports "**/src" --no-extension
 
 # Mix of options before and after arguments
 migrate-barrel-imports --no-extension ./packages/my-lib --ignore-target-files "**/*.test.ts"

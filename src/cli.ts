@@ -8,7 +8,7 @@ export async function main(): Promise<void> {
   program
     .name('migrate-barrel-imports')
     .description('CLI tool to migrate barrel files imports to direct imports')
-    .argument('<source-path>', 'Path to the package containing barrel files')
+    .argument('<source-path>', 'Glob pattern for source packages containing barrel files (e.g. "libs/*")')
     .argument('[target-path]', 'Path to the directory where imports should be migrated (default: current directory)')
     .option('--ignore-source-files <patterns>', 'Comma-separated list of file patterns to ignore in source directory')
     .option('--ignore-target-files <patterns>', 'Comma-separated list of file patterns to ignore in target directory')

@@ -85,7 +85,7 @@ export * from \"./constants\";
     fs.writeFileSync(
       path.join(targetDir, 'src/calculator.ts'),
       `
-import { add, PI } from \"@test/source-lib\";
+import { add, PI } from "@test/source-lib";
 
 export const calculateArea = (radius: number): number => {
 	return PI * add(radius, radius);
@@ -202,6 +202,121 @@ export const fetchWithRetry = async (endpoint) => {
     expect(updatedContent).toContain('import { multiply } from "@test/source-lib/src/utils.js"')
     expect(updatedContent).toContain('import { API_URL } from "@test/source-lib/src/config.js"')
     expect(updatedContent).not.toContain('import { multiply, API_URL } from "@test/source-lib"')
+
+    // Clean up
+    fs.rmSync(monorepoDir, { recursive: true, force: true })
+  })
+
+  it('should migrate barrel imports for multiple source packages using glob pattern', async () => {
+    // Create monorepo structure in temp directory
+    const monorepoDir = path.join(tmpDir, `test-monorepo-glob-${randomUUID()}`)
+    const packagesDir = path.join(monorepoDir, 'packages')
+    const targetDir = path.join(monorepoDir, 'apps/target-app')
+
+    // Create directories
+    fs.mkdirSync(packagesDir, { recursive: true })
+    fs.mkdirSync(targetDir, { recursive: true })
+    fs.mkdirSync(path.join(targetDir, 'src'), { recursive: true })
+
+    // Create multiple source packages
+    const sourcePackages = [
+      {
+        name: '@test/ui-lib',
+        exports: {
+          'src/Button.ts': 'export const Button = () => <button>Click me</button>;',
+          'src/Input.ts': 'export const Input = () => <input />;',
+          'src/index.ts': 'export * from "./Button";\nexport * from "./Input";'
+        }
+      },
+      {
+        name: '@test/utils-lib',
+        exports: {
+          'src/format.ts': 'export const formatDate = (date: Date) => date.toISOString();',
+          'src/validate.ts':
+            'export const isValidEmail = (email: string) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email);',
+          'src/index.ts': 'export * from "./format";\nexport * from "./validate";'
+        }
+      }
+    ]
+
+    // Create each source package
+    for (const pkg of sourcePackages) {
+      const dirName = pkg.name.split('/')[1] ?? 'unknown'
+      const pkgDir = path.join(packagesDir, dirName)
+      fs.mkdirSync(path.join(pkgDir, 'src'), { recursive: true })
+
+      // Create package.json
+      fs.writeFileSync(
+        path.join(pkgDir, 'package.json'),
+        JSON.stringify({
+          name: pkg.name,
+          version: '1.0.0',
+          main: 'src/index.ts',
+          types: 'src/index.ts'
+        })
+      )
+
+      // Create source files
+      for (const [filePath, content] of Object.entries(pkg.exports)) {
+        fs.writeFileSync(path.join(pkgDir, filePath), content)
+      }
+    }
+
+    // Create target package that imports from both source packages
+    fs.writeFileSync(
+      path.join(targetDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/target-app',
+        version: '1.0.0',
+        dependencies: {
+          '@test/ui-lib': '1.0.0',
+          '@test/utils-lib': '1.0.0'
+        }
+      })
+    )
+
+    // Create target file with barrel imports from both packages
+    fs.writeFileSync(
+      path.join(targetDir, 'src/UserForm.ts'),
+      `
+import { Button, Input } from "@test/ui-lib";
+import { formatDate, isValidEmail } from "@test/utils-lib";
+
+export const UserForm = () => {
+  const handleSubmit = (email: string) => {
+    if (!isValidEmail(email)) return;
+    console.log(\`Form submitted at \${formatDate(new Date())}\`);
+  };
+
+  return (
+    <form>
+      <Input />
+      <Button />
+    </form>
+  );
+};
+`
+    )
+
+    // Run migration with glob pattern
+    await runMigrateBarrelImports({
+      sourcePath: path.join(packagesDir, '*'),
+      targetPath: monorepoDir,
+      includeExtension: true
+    })
+
+    // Read the updated file content
+    const updatedContent = fs.readFileSync(path.join(targetDir, 'src/UserForm.ts'), 'utf-8')
+
+    // Verify imports from ui-lib were updated
+    expect(updatedContent).toContain('import { Button } from "@test/ui-lib/src/Button.ts"')
+    expect(updatedContent).toContain('import { Input } from "@test/ui-lib/src/Input.ts"')
+    expect(updatedContent).not.toContain('import { Button, Input } from "@test/ui-lib"')
+
+    // Verify imports from utils-lib were updated
+    expect(updatedContent).toContain('import { formatDate } from "@test/utils-lib/src/format.ts"')
+    expect(updatedContent).toContain('import { isValidEmail } from "@test/utils-lib/src/validate.ts"')
+    expect(updatedContent).not.toContain('import { formatDate, isValidEmail } from "@test/utils-lib"')
 
     // Clean up
     fs.rmSync(monorepoDir, { recursive: true, force: true })

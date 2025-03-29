@@ -16,7 +16,8 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs'
-import path, { join } from 'node:path'
+import fs from 'node:fs'
+import path from 'node:path'
 import _generate from '@babel/generator'
 import { parse } from '@babel/parser'
 import type { NodePath } from '@babel/traverse'
@@ -37,7 +38,7 @@ import {
 } from '@babel/types'
 import fg from 'fast-glob'
 import micromatch from 'micromatch'
-import type { Options } from './options'
+import type { Options as MigrationOptions } from './options'
 
 // @ts-expect-error
 const generate = _generate.default || _generate
@@ -96,7 +97,7 @@ interface UpdateImportsParams {
  * @throws {Error} If package.json cannot be read or parsed
  */
 async function getPackageInfo(packagePath: string): Promise<PackageJson> {
-  const packageJsonPath = join(packagePath, 'package.json')
+  const packageJsonPath = path.join(packagePath, 'package.json')
   const content = readFileSync(packageJsonPath, 'utf-8')
   return JSON.parse(content)
 }
@@ -133,7 +134,7 @@ async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindE
       }
     }
 
-    const fullPath = join(packagePath, file)
+    const fullPath = path.join(packagePath, file)
     console.log(`\nProcessing file: ${file}`)
     const content = readFileSync(fullPath, 'utf-8')
 
@@ -458,15 +459,17 @@ async function updateImports({
  * Main migration function that orchestrates the barrel file migration process
  *
  * Process flow:
- * 1. Reads package.json to get package name and configuration
- * 2. Scans source package for all exports (named and default)
- * 3. Finds all files in the monorepo that import from the package
- * 4. Updates each import to point directly to source files
+ * 1. Finds all source packages matching the glob pattern
+ * 2. For each package:
+ *    - Reads package.json to get package name and configuration
+ *    - Scans source package for all exports (named and default)
+ *    - Finds all files in the monorepo that import from the package
+ *    - Updates each import to point directly to source files
  *
  * @param {Options} options - Migration configuration options
  * @returns {Promise<void>}
  */
-export async function migrateBarrelImports(options: Options): Promise<void> {
+export async function migrateBarrelImports(options: MigrationOptions): Promise<void> {
   const { sourcePath, targetPath, ignoreSourceFiles, ignoreTargetFiles } = options
 
   // Track migration statistics
@@ -481,66 +484,105 @@ export async function migrateBarrelImports(options: Options): Promise<void> {
     sourceFilesScanned: 0,
     sourceFilesWithExports: 0,
     sourceFilesSkipped: 0,
-    targetFilesFound: [] as string[]
+    targetFilesFound: [] as string[],
+    packagesProcessed: 0,
+    packagesSkipped: 0
   }
 
-  const packageInfo = await getPackageInfo(sourcePath)
-  const exports = await findExports({
-    packagePath: sourcePath,
-    ignoreSourceFiles: ignoreSourceFiles,
-    stats
+  // Find all directories matching the glob pattern
+  const sourceDirs = await fg(sourcePath, {
+    cwd: targetPath,
+    absolute: true,
+    ignore: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/target-app/**'],
+    followSymbolicLinks: false,
+    onlyDirectories: true
   })
 
-  // Calculate total number of unique exports and source files
-  stats.totalExports = exports.reduce((total, exp) => total + exp.exports.length, 0)
-  stats.sourceFilesWithExports = new Set(exports.map((exp) => exp.source)).size
-  stats.sourceFilesScanned = (
-    await fg('**/*.{ts,tsx}', {
-      cwd: sourcePath,
-      ignore: ['**/node_modules/**', '**/dist/**', '**/build/**']
-    })
-  ).length
-
-  const files = await findImports({
-    packageName: packageInfo.name,
-    monorepoRoot: targetPath
-  })
-
-  stats.totalFiles = files.length
-  stats.targetFilesFound = files
-
-  for (const file of files) {
-    const relativeFile = path.relative(targetPath, file)
-    if (ignoreTargetFiles.some((pattern) => micromatch.isMatch(relativeFile, pattern))) {
-      console.log(`Skipping ignored file: ${file} (matches pattern in ${ignoreTargetFiles.join(', ')})`)
-      stats.filesSkipped++
-      continue
-    }
-
+  // Find package.json files in the matched directories
+  const packageJsonPaths: string[] = []
+  for (const dir of sourceDirs) {
+    const packageJsonPath = path.join(dir, 'package.json')
     try {
-      const originalContent = readFileSync(file, 'utf-8')
-      await updateImports({
-        filePath: file,
-        packageName: packageInfo.name,
-        exports: exports,
-        includeExtension: options.includeExtension
-      })
-      const updatedContent = readFileSync(file, 'utf-8')
+      await fs.promises.access(packageJsonPath)
+      packageJsonPaths.push(packageJsonPath)
+    } catch {
+      console.log(`No package.json found in ${dir}, skipping`)
+    }
+  }
 
-      if (originalContent !== updatedContent) {
-        stats.importsUpdated++
-      } else {
-        stats.filesWithNoUpdates++
+  console.log(`Found ${packageJsonPaths.length} source packages to process`)
+
+  for (const packageJsonPath of packageJsonPaths) {
+    try {
+      const packageDir = path.dirname(packageJsonPath)
+      console.log(`\nProcessing package: ${packageDir}`)
+      const packageInfo = await getPackageInfo(packageDir)
+      const exports = await findExports({
+        packagePath: packageDir,
+        ignoreSourceFiles: ignoreSourceFiles,
+        stats
+      })
+
+      // Calculate total number of unique exports and source files
+      stats.totalExports += exports.reduce((total, exp) => total + exp.exports.length, 0)
+      stats.sourceFilesWithExports += new Set(exports.map((exp) => exp.source)).size
+      stats.sourceFilesScanned += (
+        await fg('**/*.{ts,tsx}', {
+          cwd: packageDir,
+          ignore: ['**/node_modules/**', '**/dist/**', '**/build/**']
+        })
+      ).length
+
+      const files = await findImports({
+        packageName: packageInfo.name,
+        monorepoRoot: targetPath
+      })
+
+      stats.totalFiles += files.length
+      stats.targetFilesFound.push(...files)
+
+      for (const file of files) {
+        const relativeFile = path.relative(targetPath, file)
+        if (ignoreTargetFiles.some((pattern) => micromatch.isMatch(relativeFile, pattern))) {
+          console.log(`Skipping ignored file: ${file} (matches pattern in ${ignoreTargetFiles.join(', ')})`)
+          stats.filesSkipped++
+          continue
+        }
+
+        try {
+          const originalContent = readFileSync(file, 'utf-8')
+          await updateImports({
+            filePath: file,
+            packageName: packageInfo.name,
+            exports: exports,
+            includeExtension: options.includeExtension
+          })
+          const updatedContent = readFileSync(file, 'utf-8')
+
+          if (originalContent !== updatedContent) {
+            stats.importsUpdated++
+          } else {
+            stats.filesWithNoUpdates++
+          }
+          stats.filesProcessed++
+        } catch (error) {
+          stats.errors++
+          console.error(`Error processing ${file}:`, error)
+        }
       }
-      stats.filesProcessed++
+
+      stats.packagesProcessed++
     } catch (error) {
-      stats.errors++
-      console.error(`Error processing ${file}:`, error)
+      stats.packagesSkipped++
+      console.error(`Error processing package ${packageJsonPath}:`, error)
     }
   }
 
   // Print migration summary
   console.log('\nMigration Summary')
+  console.log(`Source packages found: ${packageJsonPaths.length}`)
+  console.log(`Source packages processed: ${stats.packagesProcessed}`)
+  console.log(`Source packages skipped: ${stats.packagesSkipped}`)
   console.log(`Source files found: ${stats.sourceFilesScanned}`)
   console.log(`Source files with exports: ${stats.sourceFilesWithExports}`)
   console.log(`Source files skipped: ${stats.sourceFilesSkipped}`)

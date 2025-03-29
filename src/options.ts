@@ -1,6 +1,6 @@
 /**
  * Configuration options for the migration process
- * @property {string} sourcePath - Path to the package being migrated
+ * @property {string} sourcePath - Glob pattern for source packages to migrate
  * @property {string} targetPath - Path to the monorepo root to search for imports
  * @property {string[]} ignoreSourceFiles - Patterns to ignore when scanning source files
  * @property {string[]} ignoreTargetFiles - Patterns to ignore when scanning target files
