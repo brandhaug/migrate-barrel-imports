@@ -49,9 +49,9 @@ import micromatch from 'micromatch'
 import type { Options as MigrationOptions } from './options'
 
 // @ts-expect-error
-const generate = _generate.default || _generate
+const generate: typeof _generate = _generate.default || _generate
 // @ts-expect-error
-const traverse = _traverse.default || _traverse
+const traverse: typeof _traverse = _traverse.default || _traverse
 
 // Common Babel configuration for parsing TypeScript files
 const BABEL_CONFIG: ParserOptions = {
@@ -515,7 +515,7 @@ async function updateImports({
       const output = generate(
         ast,
         {
-          retainLines: false,
+          retainLines: true,
           retainFunctionParens: true
         },
         content

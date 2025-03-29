@@ -20,6 +20,20 @@ describe.concurrent('migrate-barrel-imports', (): void => {
     await migrateBarrelImports(options)
   }
 
+  // Helper function to clean up output for assertions
+  const cleanOutput = (content: string): string => {
+    return content
+      .replace(/\s+/g, ' ') // Replace all whitespace with single space
+      .replace(/\s*{\s*/g, ' { ') // Normalize opening braces
+      .replace(/\s*}\s*/g, ' } ') // Normalize closing braces
+      .replace(/\s*,\s*/g, ', ') // Normalize commas
+      .replace(/\s*;\s*/g, ';') // Normalize semicolons
+      .replace(/import\s*{\s*/g, 'import { ') // Normalize import opening
+      .replace(/\s*}\s*from/g, ' } from') // Normalize import closing
+      .replace(/\s+/g, ' ') // Clean up any double spaces
+      .trim()
+  }
+
   it('should migrate barrel imports in a TS monorepo setup', async () => {
     // Create monorepo structure in temp directory
     const monorepoDir = path.join(tmpDir, `test-monorepo-ts-${randomUUID()}`)
@@ -104,9 +118,10 @@ export const calculateArea = (radius: number): number => {
     const updatedContent = fs.readFileSync(path.join(targetDir, 'src/calculator.ts'), 'utf-8')
 
     // Verify imports were updated to direct paths using string checks
-    expect(updatedContent).toContain('import { add } from "@test/source-lib/src/utils.ts"')
-    expect(updatedContent).toContain('import { PI } from "@test/source-lib/src/constants.ts"')
-    expect(updatedContent).not.toContain('import { add, PI } from "@test/source-lib"')
+    const cleanedContent = cleanOutput(updatedContent)
+    expect(cleanedContent).toContain('import { add } from "@test/source-lib/src/utils.ts"')
+    expect(cleanedContent).toContain('import { PI } from "@test/source-lib/src/constants.ts"')
+    expect(cleanedContent).not.toContain('import { add, PI } from "@test/source-lib"')
 
     // Clean up
     fs.rmSync(monorepoDir, { recursive: true, force: true })
@@ -199,9 +214,10 @@ export const fetchWithRetry = async (endpoint) => {
     const updatedContent = fs.readFileSync(path.join(targetDir, 'src/api-client.js'), 'utf-8')
 
     // Verify imports were updated to direct paths using string checks
-    expect(updatedContent).toContain('import { multiply } from "@test/source-lib/src/utils.js"')
-    expect(updatedContent).toContain('import { API_URL } from "@test/source-lib/src/config.js"')
-    expect(updatedContent).not.toContain('import { multiply, API_URL } from "@test/source-lib"')
+    const cleanedContent = cleanOutput(updatedContent)
+    expect(cleanedContent).toContain('import { multiply } from "@test/source-lib/src/utils.js"')
+    expect(cleanedContent).toContain('import { API_URL } from "@test/source-lib/src/config.js"')
+    expect(cleanedContent).not.toContain('import { multiply, API_URL } from "@test/source-lib"')
 
     // Clean up
     fs.rmSync(monorepoDir, { recursive: true, force: true })
@@ -309,14 +325,15 @@ export const UserForm = () => {
     const updatedContent = fs.readFileSync(path.join(targetDir, 'src/UserForm.ts'), 'utf-8')
 
     // Verify imports from ui-lib were updated
-    expect(updatedContent).toContain('import { Button } from "@test/ui-lib/src/Button.ts"')
-    expect(updatedContent).toContain('import { Input } from "@test/ui-lib/src/Input.ts"')
-    expect(updatedContent).not.toContain('import { Button, Input } from "@test/ui-lib"')
+    const cleanedContent = cleanOutput(updatedContent)
+    expect(cleanedContent).toContain('import { Button } from "@test/ui-lib/src/Button.ts"')
+    expect(cleanedContent).toContain('import { Input } from "@test/ui-lib/src/Input.ts"')
+    expect(cleanedContent).not.toContain('import { Button, Input } from "@test/ui-lib"')
 
     // Verify imports from utils-lib were updated
-    expect(updatedContent).toContain('import { formatDate } from "@test/utils-lib/src/format.ts"')
-    expect(updatedContent).toContain('import { isValidEmail } from "@test/utils-lib/src/validate.ts"')
-    expect(updatedContent).not.toContain('import { formatDate, isValidEmail } from "@test/utils-lib"')
+    expect(cleanedContent).toContain('import { formatDate } from "@test/utils-lib/src/format.ts"')
+    expect(cleanedContent).toContain('import { isValidEmail } from "@test/utils-lib/src/validate.ts"')
+    expect(cleanedContent).not.toContain('import { formatDate, isValidEmail } from "@test/utils-lib"')
 
     // Clean up
     fs.rmSync(monorepoDir, { recursive: true, force: true })
@@ -411,8 +428,9 @@ export const move = (direction: Direction): void => {
     const updatedContent = fs.readFileSync(path.join(targetDir, 'src/status-handler.ts'), 'utf-8')
 
     // Verify imports were updated to direct paths
-    expect(updatedContent).toContain('import { Status, Direction } from "@test/source-lib/src/enums.ts"')
-    expect(updatedContent).not.toContain('import { Status, Direction } from "@test/source-lib"')
+    const cleanedContent = cleanOutput(updatedContent)
+    expect(cleanedContent).toContain('import { Status, Direction } from "@test/source-lib/src/enums.ts"')
+    expect(cleanedContent).not.toContain('import { Status, Direction } from "@test/source-lib"')
 
     // Clean up
     fs.rmSync(monorepoDir, { recursive: true, force: true })
@@ -506,8 +524,9 @@ export const loadConfig = (config: Config): void => {
     const updatedContent = fs.readFileSync(path.join(targetDir, 'src/user-service.ts'), 'utf-8')
 
     // Verify imports were updated to direct paths
-    expect(updatedContent).toContain('import { User, Config } from "@test/source-lib/src/types.ts"')
-    expect(updatedContent).not.toContain('import { User, Config } from "@test/source-lib"')
+    const cleanedContent = cleanOutput(updatedContent)
+    expect(cleanedContent).toContain('import { User, Config } from "@test/source-lib/src/types.ts"')
+    expect(cleanedContent).not.toContain('import { User, Config } from "@test/source-lib"')
 
     // Clean up
     fs.rmSync(monorepoDir, { recursive: true, force: true })
@@ -598,8 +617,9 @@ export const handleStatus = (status: Status, callback: Callback<string>): void =
     const updatedContent = fs.readFileSync(path.join(targetDir, 'src/position-handler.ts'), 'utf-8')
 
     // Verify imports were updated to direct paths
-    expect(updatedContent).toContain('import { Status, Coordinates, Callback } from "@test/source-lib/src/types.ts"')
-    expect(updatedContent).not.toContain('import { Status, Coordinates, Callback } from "@test/source-lib"')
+    const cleanedContent = cleanOutput(updatedContent)
+    expect(cleanedContent).toContain('import { Status, Coordinates, Callback } from "@test/source-lib/src/types.ts"')
+    expect(cleanedContent).not.toContain('import { Status, Coordinates, Callback } from "@test/source-lib"')
 
     // Clean up
     fs.rmSync(monorepoDir, { recursive: true, force: true })
@@ -687,7 +707,6 @@ logger.log('Application started');
 console.log(\`Elapsed time: \${timer.getElapsed()}ms\`);
 `
     )
-
     // Run migration
     await runMigrateBarrelImports({
       sourcePath: sourceDir,
@@ -699,8 +718,9 @@ console.log(\`Elapsed time: \${timer.getElapsed()}ms\`);
     const updatedContent = fs.readFileSync(path.join(targetDir, 'src/app.ts'), 'utf-8')
 
     // Verify imports were updated to direct paths
-    expect(updatedContent).toContain('import { Logger, Timer } from "@test/source-lib/src/classes.ts"')
-    expect(updatedContent).not.toContain('import { Logger, Timer } from "@test/source-lib"')
+    const cleanedContent = cleanOutput(updatedContent)
+    expect(cleanedContent).toContain('import { Logger, Timer } from "@test/source-lib/src/classes.ts"')
+    expect(cleanedContent).not.toContain('import { Logger, Timer } from "@test/source-lib"')
 
     // Clean up
     fs.rmSync(monorepoDir, { recursive: true, force: true })
