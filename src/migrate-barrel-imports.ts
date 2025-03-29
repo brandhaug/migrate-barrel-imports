@@ -20,6 +20,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import _generate from '@babel/generator'
 import { parse } from '@babel/parser'
+import type { ParserOptions } from '@babel/parser'
 import type { NodePath } from '@babel/traverse'
 import _traverse from '@babel/traverse'
 import {
@@ -52,6 +53,38 @@ const generate = _generate.default || _generate
 // @ts-expect-error
 const traverse = _traverse.default || _traverse
 
+// Common Babel configuration for parsing TypeScript files
+const BABEL_CONFIG: ParserOptions = {
+  sourceType: 'module',
+  plugins: [
+    'typescript',
+    'jsx',
+    'decorators-legacy',
+    'classProperties',
+    'classPrivateProperties',
+    'classPrivateMethods',
+    'exportDefaultFrom',
+    'exportNamespaceFrom',
+    'functionBind',
+    'functionSent',
+    'dynamicImport',
+    'nullishCoalescingOperator',
+    'optionalChaining',
+    'objectRestSpread',
+    'asyncGenerators',
+    'doExpressions',
+    'importMeta',
+    'logicalAssignment',
+    'moduleBlocks',
+    'moduleStringNames',
+    'numericSeparator',
+    'partialApplication',
+    'privateIn',
+    'throwExpressions',
+    'topLevelAwait'
+  ]
+}
+
 /**
  * @property {string} name - Package name
  * @property {Record<string, string>} [exports] - Package exports configuration
@@ -76,13 +109,27 @@ interface ExportInfo {
   isIgnored?: boolean
 }
 
+interface MigrationStats {
+  totalFiles: number
+  filesProcessed: number
+  filesSkipped: number
+  importsUpdated: number
+  filesWithNoUpdates: number
+  errors: number
+  totalExports: number
+  sourceFilesScanned: number
+  sourceFilesWithExports: number
+  sourceFilesSkipped: number
+  targetFilesFound: string[]
+  packagesProcessed: number
+  packagesSkipped: number
+  warnings: string[]
+}
+
 interface FindExportsParams {
   packagePath: string
   ignoreSourceFiles?: string[]
-  stats?: {
-    sourceFilesSkipped: number
-    warnings: string[]
-  }
+  stats?: MigrationStats
 }
 
 interface FindImportsParams {
@@ -96,9 +143,7 @@ interface UpdateImportsParams {
   exports: ExportInfo[]
   includeExtension?: boolean
   warnings?: string[]
-  stats?: {
-    errors: number
-  }
+  stats?: MigrationStats
 }
 
 /**
@@ -112,6 +157,41 @@ async function getPackageInfo(packagePath: string): Promise<PackageJson> {
   const packageJsonPath = path.join(packagePath, 'package.json')
   const content = readFileSync(packageJsonPath, 'utf-8')
   return JSON.parse(content)
+}
+
+/**
+ * Extracts export names from a declaration node
+ */
+function getExportNames(declaration: ExportNamedDeclaration['declaration']): string[] {
+  if (!declaration) return []
+
+  if (isVariableDeclaration(declaration)) {
+    return declaration.declarations
+      .map((d: VariableDeclarator) => (isIdentifier(d.id) ? d.id.name : null))
+      .filter((name: string | null): name is string => name !== null)
+  }
+
+  if (isFunctionDeclaration(declaration) && declaration.id) {
+    return [declaration.id.name]
+  }
+
+  if (isTSEnumDeclaration(declaration)) {
+    return [declaration.id.name]
+  }
+
+  if (isTSInterfaceDeclaration(declaration)) {
+    return [declaration.id.name]
+  }
+
+  if (isTSTypeAliasDeclaration(declaration)) {
+    return [declaration.id.name]
+  }
+
+  if (isClassDeclaration(declaration) && declaration.id) {
+    return [declaration.id.name]
+  }
+
+  return []
 }
 
 /**
@@ -151,36 +231,7 @@ async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindE
     const content = readFileSync(fullPath, 'utf-8')
 
     try {
-      const ast = parse(content, {
-        sourceType: 'module',
-        plugins: [
-          'typescript',
-          'jsx',
-          'decorators-legacy',
-          'classProperties',
-          'classPrivateProperties',
-          'classPrivateMethods',
-          'exportDefaultFrom',
-          'exportNamespaceFrom',
-          'functionBind',
-          'functionSent',
-          'dynamicImport',
-          'nullishCoalescingOperator',
-          'optionalChaining',
-          'objectRestSpread',
-          'asyncGenerators',
-          'doExpressions',
-          'importMeta',
-          'logicalAssignment',
-          'moduleBlocks',
-          'moduleStringNames',
-          'numericSeparator',
-          'partialApplication',
-          'privateIn',
-          'throwExpressions',
-          'topLevelAwait'
-        ]
-      })
+      const ast = parse(content, BABEL_CONFIG)
 
       traverse(ast, {
         ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
@@ -198,78 +249,19 @@ async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindE
 
           // Handle variable declarations with exports
           if (path.node.declaration) {
-            if (isVariableDeclaration(path.node.declaration)) {
-              const declarations = path.node.declaration.declarations
-              const namedExports = declarations
-                .map((d: VariableDeclarator) => {
-                  if (isIdentifier(d.id)) {
-                    return d.id.name
-                  }
-                  return null
-                })
-                .filter((name: string | null): name is string => name !== null)
-
-              if (namedExports.length > 0) {
-                console.log(`Named exports found: ${namedExports.join(', ')}`)
-                exports.push({
-                  source: file,
-                  exports: namedExports,
-                  isIgnored
-                })
-              }
-            } else if (isFunctionDeclaration(path.node.declaration)) {
-              // Handle function declarations, including those that use browser globals
-              const functionName = path.node.declaration.id?.name
-              if (functionName) {
-                console.log(`Found function export: ${functionName}`)
-                exports.push({
-                  source: file,
-                  exports: [functionName],
-                  isIgnored
-                })
-              }
-            } else if (isTSEnumDeclaration(path.node.declaration)) {
-              // Handle enum exports
-              const enumName = path.node.declaration.id.name
-              console.log(`Found enum export: ${enumName}`)
+            const exportNames = getExportNames(path.node.declaration)
+            if (exportNames.length > 0) {
+              console.log(`Named exports found: ${exportNames.join(', ')}`)
               exports.push({
                 source: file,
-                exports: [enumName],
-                isIgnored
-              })
-            } else if (isTSInterfaceDeclaration(path.node.declaration)) {
-              // Handle interface exports
-              const interfaceName = path.node.declaration.id.name
-              console.log(`Found interface export: ${interfaceName}`)
-              exports.push({
-                source: file,
-                exports: [interfaceName],
-                isIgnored
-              })
-            } else if (isTSTypeAliasDeclaration(path.node.declaration)) {
-              // Handle type alias exports
-              const typeName = path.node.declaration.id.name
-              console.log(`Found type alias export: ${typeName}`)
-              exports.push({
-                source: file,
-                exports: [typeName],
-                isIgnored
-              })
-            } else if (isClassDeclaration(path.node.declaration) && path.node.declaration.id) {
-              // Handle class exports
-              const className = path.node.declaration.id.name
-              console.log(`Found class export: ${className}`)
-              exports.push({
-                source: file,
-                exports: [className],
+                exports: exportNames,
                 isIgnored
               })
             }
-            return
           }
 
           // Handle export specifiers
-          const namedExports = path.node.specifiers
+          const exportNames = path.node.specifiers
             .map((s) => {
               if (isExportSpecifier(s)) {
                 const exported = s.exported
@@ -279,11 +271,11 @@ async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindE
             })
             .filter((name: string | null): name is string => name !== null)
 
-          if (namedExports.length > 0) {
-            console.log(`Named exports found: ${namedExports.join(', ')}`)
+          if (exportNames.length > 0) {
+            console.log(`Named exports found: ${exportNames.join(', ')}`)
             exports.push({
               source: file,
-              exports: namedExports,
+              exports: exportNames,
               isIgnored
             })
           }
@@ -291,18 +283,17 @@ async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindE
         ExportDefaultDeclaration(path: NodePath<ExportDefaultDeclaration>) {
           console.log(`Found default export in ${file}`)
           const exported = path.node.declaration
-          if (isIdentifier(exported)) {
-            console.log(`Default export name: ${exported.name}`)
+          const exportName = isIdentifier(exported)
+            ? exported.name
+            : isFunctionDeclaration(exported) && exported.id
+              ? exported.id.name
+              : null
+
+          if (exportName) {
+            console.log(`Default export name: ${exportName}`)
             exports.push({
               source: file,
-              exports: [exported.name],
-              isIgnored
-            })
-          } else if (isFunctionDeclaration(exported) && exported.id) {
-            console.log(`Default export name: ${exported.id.name}`)
-            exports.push({
-              source: file,
-              exports: [exported.id.name],
+              exports: [exportName],
               isIgnored
             })
           } else {
@@ -349,10 +340,7 @@ async function findImports({ packageName, monorepoRoot }: FindImportsParams): Pr
     for (const file of files) {
       try {
         const content = readFileSync(file, 'utf-8')
-        const ast = parse(content, {
-          sourceType: 'module',
-          plugins: ['typescript', 'jsx']
-        })
+        const ast = parse(content, BABEL_CONFIG)
 
         traverse(ast, {
           ImportDeclaration(path: NodePath<ImportDeclaration>) {
@@ -411,37 +399,7 @@ async function updateImports({
   const content = readFileSync(filePath, 'utf-8')
 
   try {
-    const ast = parse(content, {
-      sourceType: 'module',
-      plugins: [
-        'typescript',
-        'jsx',
-        'decorators-legacy',
-        'classProperties',
-        'classPrivateProperties',
-        'classPrivateMethods',
-        'exportDefaultFrom',
-        'exportNamespaceFrom',
-        'functionBind',
-        'functionSent',
-        'dynamicImport',
-        'nullishCoalescingOperator',
-        'optionalChaining',
-        'objectRestSpread',
-        'asyncGenerators',
-        'doExpressions',
-        'importMeta',
-        'logicalAssignment',
-        'moduleBlocks',
-        'moduleStringNames',
-        'numericSeparator',
-        'partialApplication',
-        'privateIn',
-        'throwExpressions',
-        'topLevelAwait'
-      ]
-    })
-
+    const ast = parse(content, BABEL_CONFIG)
     let modified = false
     let importCount = 0
     // Track processed imports to prevent loops
@@ -594,7 +552,7 @@ export async function migrateBarrelImports(options: MigrationOptions): Promise<v
   const { sourcePath, targetPath, ignoreSourceFiles, ignoreTargetFiles } = options
 
   // Track migration statistics
-  const stats = {
+  const stats: MigrationStats = {
     totalFiles: 0,
     filesProcessed: 0,
     filesSkipped: 0,
@@ -605,10 +563,10 @@ export async function migrateBarrelImports(options: MigrationOptions): Promise<v
     sourceFilesScanned: 0,
     sourceFilesWithExports: 0,
     sourceFilesSkipped: 0,
-    targetFilesFound: [] as string[],
+    targetFilesFound: [],
     packagesProcessed: 0,
     packagesSkipped: 0,
-    warnings: [] as string[]
+    warnings: []
   }
 
   // Find all directories matching the glob pattern

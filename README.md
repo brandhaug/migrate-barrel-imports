@@ -52,12 +52,6 @@ migrate-barrel-imports "libs/*" --no-extension
 
 # Migrate specific packages using glob pattern
 migrate-barrel-imports "packages/{ui,core,utils}" --ignore-target-files "**/*.test.ts"
-
-# Migrate all packages in a monorepo
-migrate-barrel-imports "**/src" --no-extension
-
-# Mix of options before and after arguments
-migrate-barrel-imports --no-extension ./packages/my-lib --ignore-target-files "**/*.test.ts"
 ```
 
 ## Contributing
