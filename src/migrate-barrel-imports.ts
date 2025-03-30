@@ -16,11 +16,10 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs'
-import fs from 'node:fs'
 import path from 'node:path'
 import _generate from '@babel/generator'
-import { parse } from '@babel/parser'
 import type { ParserOptions } from '@babel/parser'
+import { parse } from '@babel/parser'
 import type { NodePath } from '@babel/traverse'
 import _traverse from '@babel/traverse'
 import {
@@ -37,6 +36,8 @@ import {
   isExportSpecifier,
   isFunctionDeclaration,
   isIdentifier,
+  isImportDefaultSpecifier,
+  isImportNamespaceSpecifier,
   isImportSpecifier,
   isTSEnumDeclaration,
   isTSInterfaceDeclaration,
@@ -102,28 +103,37 @@ interface PackageJson {
  * @property {string} source - Source file path containing exports
  * @property {string[]} exports - Array of exported names from the file
  * @property {boolean} [isIgnored] - Whether the file is ignored
+ * @property {Record<string, string>} [reExports] - Map of export names to their original source package
+ * @property {Record<string, string>} [exportSources] - Map of export names to their source files
+ * @property {string[]} [defaultExportNames] - Names of entities exported as default
+ * @property {boolean} [isBarrelFile] - Whether this file is a barrel file
+ * @property {Record<string, string[]>} [exportFiles] - Map of export names to all files that export them
  */
 interface ExportInfo {
   source: string
   exports: string[]
   isIgnored?: boolean
+  reExports?: Record<string, string>
+  exportSources?: Record<string, string>
+  defaultExportNames?: string[]
+  isBarrelFile?: boolean
+  exportFiles?: Record<string, string[]>
 }
 
 interface MigrationStats {
-  totalFiles: number
-  filesProcessed: number
-  filesSkipped: number
-  importsUpdated: number
-  filesWithNoUpdates: number
-  errors: number
-  totalExports: number
-  sourceFilesScanned: number
+  sourcePackagesFound: number
+  sourcePackagesProcessed: number
+  sourcePackagesSkipped: number
+  sourceFilesFound: number
   sourceFilesWithExports: number
   sourceFilesSkipped: number
-  targetFilesFound: string[]
-  packagesProcessed: number
-  packagesSkipped: number
-  warnings: string[]
+  exportsFound: number
+  targetFilesFound: number
+  targetFilesProcessed: number
+  importsUpdated: number
+  noChangesNeeded: number
+  targetFilesSkipped: number
+  importsMigrated: number
 }
 
 interface FindExportsParams {
@@ -134,7 +144,13 @@ interface FindExportsParams {
 
 interface FindImportsParams {
   packageName: string
-  monorepoRoot: string
+  targetPath: string
+  stats?: MigrationStats
+}
+
+interface ImportSpec {
+  local: ImportSpecifier['local']
+  imported: ImportSpecifier['imported']
 }
 
 interface UpdateImportsParams {
@@ -195,6 +211,40 @@ function getExportNames(declaration: ExportNamedDeclaration['declaration']): str
 }
 
 /**
+ * Checks if a file is a barrel file by analyzing its exports
+ *
+ * @param {string} filePath - Path to the file to check
+ * @returns {Promise<boolean>} Whether the file is a barrel file
+ */
+async function isBarrelFile(filePath: string): Promise<boolean> {
+  try {
+    const content = readFileSync(filePath, 'utf-8')
+    const ast = parse(content, BABEL_CONFIG)
+    let hasReExports = false
+    let hasDirectExports = false
+
+    traverse(ast, {
+      ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
+        if (path.node.source) {
+          hasReExports = true
+        } else {
+          hasDirectExports = true
+        }
+      },
+      ExportDefaultDeclaration() {
+        hasDirectExports = true
+      }
+    })
+
+    // A barrel file typically has re-exports and may or may not have direct exports
+    return hasReExports
+  } catch (error) {
+    console.error(`Error checking if ${filePath} is a barrel file:`, error)
+    return false
+  }
+}
+
+/**
  * Recursively finds all exports in a package by scanning all TypeScript files
  *
  * This function:
@@ -202,12 +252,17 @@ function getExportNames(declaration: ExportNamedDeclaration['declaration']): str
  * 2. Identifies both named exports and default exports
  * 3. Skips re-exports to avoid circular dependencies
  * 4. Filters out ignored files based on patterns
+ * 5. Handles barrel files by tracking their re-exports
  *
  * @param {FindExportsParams} params - Parameters for finding exports
  * @returns {Promise<ExportInfo[]>} Array of export information, including source file and exported names
  */
 async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindExportsParams): Promise<ExportInfo[]> {
   const exports: ExportInfo[] = []
+  const barrelFiles = new Set<string>()
+  const processedFiles = new Set<string>()
+  const exportSources: Record<string, string> = {}
+  const exportFiles: Record<string, string[]> = {}
 
   console.log(`Scanning for TypeScript and JavaScript files in: ${packagePath}`)
   const allFiles = await fg('**/*.{ts,tsx,js,jsx}', {
@@ -216,6 +271,16 @@ async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindE
   })
   console.log(`Found ${allFiles.length} files`)
 
+  // First pass: identify barrel files
+  for (const file of allFiles) {
+    const fullPath = path.join(packagePath, file)
+    if (await isBarrelFile(fullPath)) {
+      barrelFiles.add(file)
+      console.log(`Identified barrel file: ${file}`)
+    }
+  }
+
+  // Second pass: process all files
   for (const file of allFiles) {
     // Mark files that match ignore patterns but still process them
     const isIgnored = ignoreSourceFiles.some((pattern) => micromatch.isMatch(file, pattern))
@@ -232,81 +297,133 @@ async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindE
 
     try {
       const ast = parse(content, BABEL_CONFIG)
+      const fileExports: string[] = []
+      const reExports: Record<string, string> = {}
+      const fileExportSources: Record<string, string> = {}
+      const defaultExportNames: string[] = []
 
       traverse(ast, {
-        ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
-          console.log(`Found named export in ${file}`)
-
+        ExportNamedDeclaration(nodePath: NodePath<ExportNamedDeclaration>) {
           // Handle re-exports from external packages
-          if (path.node.source) {
-            const sourceValue = path.node.source.value
-            // Skip re-exports from node_modules or external packages
+          if (nodePath.node.source) {
+            const sourceValue = nodePath.node.source.value
             if (sourceValue.includes('node_modules') || !sourceValue.startsWith('.')) {
-              console.log(`Skipping re-export from external package: ${sourceValue}`)
+              // Extract export names and their original source
+              nodePath.node.specifiers.forEach((specifier) => {
+                if (isExportSpecifier(specifier)) {
+                  const exported = specifier.exported
+                  const exportName = isIdentifier(exported) ? exported.name : exported.value
+                  reExports[exportName] = sourceValue
+                  fileExports.push(exportName)
+                  fileExportSources[exportName] = file
+
+                  // Track all files that export this symbol
+                  if (!exportFiles[exportName]) {
+                    exportFiles[exportName] = []
+                  }
+                  exportFiles[exportName].push(file)
+                }
+              })
               return
             }
           }
 
           // Handle variable declarations with exports
-          if (path.node.declaration) {
-            const exportNames = getExportNames(path.node.declaration)
+          if (nodePath.node.declaration) {
+            const exportNames = getExportNames(nodePath.node.declaration)
             if (exportNames.length > 0) {
-              console.log(`Named exports found: ${exportNames.join(', ')}`)
-              exports.push({
-                source: file,
-                exports: exportNames,
-                isIgnored
+              fileExports.push(...exportNames)
+              exportNames.forEach((name) => {
+                fileExportSources[name] = file
+
+                // Track all files that export this symbol
+                if (!exportFiles[name]) {
+                  exportFiles[name] = []
+                }
+                exportFiles[name].push(file)
               })
             }
           }
 
           // Handle export specifiers
-          const exportNames = path.node.specifiers
+          const exportNames = nodePath.node.specifiers
             .map((s) => {
               if (isExportSpecifier(s)) {
                 const exported = s.exported
-                return isIdentifier(exported) ? exported.name : exported.value
+                const exportName = isIdentifier(exported) ? exported.name : exported.value
+                if (nodePath.node.source) {
+                  // If it's a re-export from another file, track the source
+                  const sourceValue = nodePath.node.source.value
+                  if (sourceValue.startsWith('.')) {
+                    const resolvedPath = path.join(path.dirname(file), sourceValue)
+                    fileExportSources[exportName] = resolvedPath.replace(/\.[^/.]+$/, '')
+
+                    // Track all files that export this symbol
+                    if (!exportFiles[exportName]) {
+                      exportFiles[exportName] = []
+                    }
+                    exportFiles[exportName].push(file)
+                  }
+                }
+                return exportName
               }
               return null
             })
             .filter((name: string | null): name is string => name !== null)
 
           if (exportNames.length > 0) {
-            console.log(`Named exports found: ${exportNames.join(', ')}`)
-            exports.push({
-              source: file,
-              exports: exportNames,
-              isIgnored
+            fileExports.push(...exportNames)
+            exportNames.forEach((name) => {
+              if (!fileExportSources[name]) {
+                fileExportSources[name] = file
+              }
             })
           }
         },
         ExportDefaultDeclaration(path: NodePath<ExportDefaultDeclaration>) {
-          console.log(`Found default export in ${file}`)
           const exported = path.node.declaration
           const exportName = isIdentifier(exported)
             ? exported.name
             : isFunctionDeclaration(exported) && exported.id
               ? exported.id.name
-              : null
+              : isClassDeclaration(exported) && exported.id
+                ? exported.id.name
+                : 'default'
 
-          if (exportName) {
-            console.log(`Default export name: ${exportName}`)
-            exports.push({
-              source: file,
-              exports: [exportName],
-              isIgnored
-            })
-          } else {
-            console.log('Default export is not an identifier or named function')
+          fileExports.push(exportName)
+          fileExportSources[exportName] = file
+
+          // If this is a named entity (class, function) being exported as default, track its name
+          if (exportName !== 'default') {
+            defaultExportNames.push(exportName)
           }
         }
       })
+
+      if (fileExports.length > 0 || Object.keys(reExports).length > 0) {
+        exports.push({
+          source: file,
+          exports: fileExports,
+          isIgnored,
+          ...(Object.keys(reExports).length > 0 && { reExports }),
+          ...(Object.keys(fileExportSources).length > 0 && { exportSources: fileExportSources }),
+          ...(defaultExportNames.length > 0 && { defaultExportNames }),
+          ...((await isBarrelFile(fullPath)) && { isBarrelFile: true }),
+          ...(Object.keys(exportFiles).length > 0 && { exportFiles })
+        })
+
+        // Print exports in a single line
+        if (fileExports.length > 0) {
+          console.log(`Found exports ${fileExports.join(', ')} in ${file}`)
+        }
+      }
     } catch (error) {
       console.error(`Error parsing ${file}:`, error)
     }
   }
 
   console.log(`\nTotal exports found: ${exports.length}`)
+  console.log(`Barrel files found: ${barrelFiles.size}`)
   return exports
 }
 
@@ -322,13 +439,13 @@ async function findExports({ packagePath, ignoreSourceFiles = [], stats }: FindE
  * @param {FindImportsParams} params - Parameters for finding imports
  * @returns {Promise<string[]>} Array of file paths that import from the package
  */
-async function findImports({ packageName, monorepoRoot }: FindImportsParams): Promise<string[]> {
+async function findImports({ packageName, targetPath, stats }: FindImportsParams): Promise<string[]> {
   try {
     const allFiles = new Set<string>()
 
     // Find all TypeScript and JavaScript files in the monorepo
     const files = await fg(['**/*.{ts,tsx,js,jsx}'], {
-      cwd: monorepoRoot,
+      cwd: targetPath,
       absolute: true,
       ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'],
       followSymbolicLinks: false
@@ -397,140 +514,204 @@ async function updateImports({
 }: UpdateImportsParams): Promise<void> {
   console.log(`\nProcessing file: ${filePath}`)
   const content = readFileSync(filePath, 'utf-8')
+  let modified = false
 
   try {
     const ast = parse(content, BABEL_CONFIG)
-    let modified = false
-    let importCount = 0
-    // Track processed imports to prevent loops
-    const processedImports = new Set<string>()
+    const importDeclarations: ImportDeclaration[] = []
 
+    // First pass: collect all import declarations
     traverse(ast, {
       ImportDeclaration(path: NodePath<ImportDeclaration>) {
         const importSource = path.node.source.value
-        // Skip if we've already processed this import
-        if (processedImports.has(importSource)) {
-          return
-        }
-
-        if (importSource === packageName) {
-          importCount++
-          console.log(`Found import from ${packageName}`)
-          const specifiers = path.node.specifiers
-
-          // Group imports by source file
-          type ImportSpec = {
-            local: ImportSpecifier['local']
-            imported: ImportSpecifier['imported']
-          }
-          const importsBySource = new Map<string, ImportSpec[]>()
-          const remainingSpecifiers: Array<ImportSpecifier | ImportDefaultSpecifier | ImportNamespaceSpecifier> = []
-          let hasReExports = false
-          let hasDirectExports = false
-
-          for (const specifier of specifiers) {
-            if (isImportSpecifier(specifier)) {
-              const imported = specifier.imported
-              const importName = isIdentifier(imported) ? imported.name : imported.value
-              const exportInfo = exports.find((e) => e.exports.includes(importName))
-
-              if (exportInfo) {
-                console.log(`  Found export ${importName} in ${exportInfo.source}`)
-                // Skip modifying imports from ignored files
-                if (exportInfo.isIgnored) {
-                  console.log(`  Keeping original import for ignored file: ${exportInfo.source}`)
-                  remainingSpecifiers.push(specifier)
-                  continue
-                }
-                const importPath = includeExtension
-                  ? `${packageName}/${exportInfo.source}`
-                  : `${packageName}/${exportInfo.source.replace(/\.(js|jsx|ts|tsx|mjs|cjs)$/, '')}`
-
-                if (!importsBySource.has(importPath)) {
-                  importsBySource.set(importPath, [])
-                }
-                importsBySource.get(importPath)?.push({ local: specifier.local, imported: specifier.imported })
-                modified = true
-                hasDirectExports = true
-              } else {
-                // Check if this is a re-export from an external package
-                const isReExport = exports.some((e) => e.source.includes('node_modules') || !e.source.startsWith('.'))
-                if (isReExport) {
-                  const warning = `Skipping re-export from external package: ${importName} in "${filePath}"`
-                  console.log(`  ${warning}`)
-                  if (warnings) {
-                    warnings.push(warning)
-                  }
-                  remainingSpecifiers.push(specifier)
-                  hasReExports = true
-                  continue
-                }
-                const warning = `Could not find export ${importName} in ${filePath}`
-                console.log(`  Warning: ${warning}`)
-                if (warnings) {
-                  warnings.push(warning)
-                }
-                remainingSpecifiers.push(specifier)
-              }
-            } else {
-              remainingSpecifiers.push(specifier)
-            }
-          }
-
-          // If we have no direct exports to migrate, keep the original import
-          if (!hasDirectExports) {
-            console.log('  Keeping original import due to no direct exports to migrate')
-            processedImports.add(importSource)
-            return
-          }
-
-          // Create new import declarations
-          const newImports: ImportDeclaration[] = []
-
-          // Add remaining imports first (including re-exports)
-          if (remainingSpecifiers.length > 0) {
-            newImports.push(importDeclaration(remainingSpecifiers, stringLiteral(packageName)))
-          }
-
-          // Add grouped imports for direct exports
-          for (const [importPath, specifiers] of importsBySource.entries()) {
-            newImports.push(
-              importDeclaration(
-                specifiers.map((s) => importSpecifier(s.local, s.imported)),
-                stringLiteral(importPath)
-              )
-            )
-          }
-
-          path.replaceWithMultiple(newImports)
-          console.log('  Replaced import with direct imports from source files')
-          // Mark the original import as processed
-          processedImports.add(importSource)
+        if (importSource.startsWith(packageName)) {
+          importDeclarations.push(path.node)
         }
       }
     })
 
+    const importsBySource = new Map<string, ImportSpec[]>()
+    const remainingSpecifiers: Array<ImportSpecifier | ImportDefaultSpecifier | ImportNamespaceSpecifier> = []
+
+    for (const declaration of importDeclarations) {
+      const importSource = declaration.source.value
+      const specifiers = declaration.specifiers
+
+      for (const specifier of specifiers) {
+        if (isImportSpecifier(specifier)) {
+          const imported = specifier.imported
+          const importName = isIdentifier(imported) ? imported.name : imported.value
+          const exportInfo = exports.find((e) => e.exports.includes(importName))
+
+          if (exportInfo) {
+            if (exportInfo.isIgnored) {
+              remainingSpecifiers.push(specifier)
+              continue
+            }
+
+            // Check if this is a re-export from an external package
+            if (exportInfo.reExports?.[importName]) {
+              const reExportSource = exportInfo.reExports[importName]
+              if (!reExportSource.startsWith('.')) {
+                // Keep the original import from the external package
+                const sourcePath = reExportSource
+                if (!importsBySource.has(sourcePath)) {
+                  importsBySource.set(sourcePath, [])
+                }
+                importsBySource.get(sourcePath)?.push({ local: specifier.local, imported: specifier.imported })
+                modified = true
+                continue
+              }
+            }
+
+            // Then check if it's a direct export from index.ts
+            if (
+              exportInfo.source === 'src/index.ts' &&
+              exportInfo.exports.includes(importName) &&
+              !exportInfo.reExports?.[importName]
+            ) {
+              // Handle entities that are exported as default
+              const isDefaultExportedEntity = exportInfo.defaultExportNames?.includes(importName)
+
+              if (isDefaultExportedEntity) {
+                // For entities that are exported as default, import directly from the package
+                const sourcePath = packageName
+                if (!importsBySource.has(sourcePath)) {
+                  importsBySource.set(sourcePath, [])
+                }
+                importsBySource.get(sourcePath)?.push({ local: specifier.local, imported: specifier.imported })
+                modified = true
+                continue
+              }
+
+              // Check if this is a named export or default export
+              if (importName !== 'default') {
+                // For each named export from index.ts, create a separate import source path
+                const sourcePath = includeExtension
+                  ? `${packageName}/${exportInfo.source}`
+                  : `${packageName}/${exportInfo.source.replace(/\.[^/.]+$/, '')}`
+
+                if (!importsBySource.has(sourcePath)) {
+                  importsBySource.set(sourcePath, [])
+                }
+                importsBySource.get(sourcePath)?.push({ local: specifier.local, imported: specifier.imported })
+                modified = true
+                continue
+              }
+            }
+
+            // Find the best source file for this export
+            const exportFiles = exportInfo.exportFiles?.[importName] || []
+            let bestSourceFile = exportFiles[0] // Default to first file if no better option
+
+            // Prefer main source files over auxiliary files
+            if (exportFiles.length > 1) {
+              // Remove story files, test files, and other auxiliary files from consideration
+              const mainFiles = exportFiles.filter(
+                (file: string) =>
+                  !file.includes('.stories.') &&
+                  !file.includes('.test.') &&
+                  !file.includes('.spec.') &&
+                  !file.includes('.stories/') &&
+                  !file.includes('.test/') &&
+                  !file.includes('.spec/')
+              )
+
+              if (mainFiles.length > 0) {
+                bestSourceFile = mainFiles[0]
+              }
+            }
+
+            if (bestSourceFile) {
+              const sourcePath = includeExtension
+                ? `${packageName}/${bestSourceFile}`
+                : `${packageName}/${bestSourceFile.replace(/\.[^/.]+$/, '')}`
+
+              // Check if this import is aliased and if we already have the original import
+              const isAliased = specifier.local.name !== importName
+              const hasOriginalImport = Array.from(importsBySource.values()).some((specs) =>
+                specs.some((spec) => spec.imported && isIdentifier(spec.imported) && spec.imported.name === importName)
+              )
+
+              // Only add the import if it's not aliased or if we don't have the original import yet
+              if (!isAliased || !hasOriginalImport) {
+                if (!importsBySource.has(sourcePath)) {
+                  importsBySource.set(sourcePath, [])
+                }
+                importsBySource.get(sourcePath)?.push({ local: specifier.local, imported: specifier.imported })
+                modified = true
+              }
+              continue
+            }
+
+            remainingSpecifiers.push(specifier)
+          } else if (isImportDefaultSpecifier(specifier) || isImportNamespaceSpecifier(specifier)) {
+            remainingSpecifiers.push(specifier)
+          }
+        }
+      }
+    }
+
+    // Second pass: update the AST with new imports
+    traverse(ast, {
+      ImportDeclaration(path: NodePath<ImportDeclaration>) {
+        const importSource = path.node.source.value
+        if (importSource.startsWith(packageName)) {
+          // Remove the original import declaration
+          path.remove()
+        }
+      }
+    })
+
+    // Add new import declarations
+    const newImports: ImportDeclaration[] = []
+    for (const [source, specifiers] of importsBySource) {
+      if (specifiers.length > 0) {
+        newImports.push(
+          importDeclaration(
+            specifiers.map(({ local, imported }) => importSpecifier(local, imported)),
+            stringLiteral(source)
+          )
+        )
+        if (stats) {
+          stats.importsMigrated += specifiers.length
+        }
+      }
+    }
+
+    // Add remaining specifiers if any
+    if (remainingSpecifiers.length > 0) {
+      newImports.push(importDeclaration(remainingSpecifiers, stringLiteral(packageName)))
+    }
+
+    // Add all new imports at the top of the file
+    if (newImports.length > 0) {
+      ast.program.body.unshift(...newImports)
+      modified = true
+    }
+
     if (modified) {
-      console.log(`Writing changes to ${filePath}`)
+      // Write changes back to file
       const output = generate(
         ast,
         {
+          // To avoid removing spaces in code
           retainLines: true,
           retainFunctionParens: true
         },
         content
-      )
-      writeFileSync(filePath, output.code)
-    } else if (importCount > 0) {
-      console.log(`No changes needed for ${importCount} imports`)
-    } else {
-      console.log('No imports found to update')
+      ).code
+      writeFileSync(filePath, output)
+      console.log(`Writing changes to ${filePath}`)
+
+      if (stats) {
+        stats.importsUpdated++
+      }
+    } else if (stats) {
+      stats.noChangesNeeded++
     }
   } catch (error) {
-    if (stats) {
-      stats.errors++
-    }
-    console.error(`Error processing ${filePath}:`, error)
+    console.error(`Error updating imports in ${filePath}:`, error)
   }
 }
 
@@ -549,140 +730,120 @@ async function updateImports({
  * @returns {Promise<void>}
  */
 export async function migrateBarrelImports(options: MigrationOptions): Promise<void> {
-  const { sourcePath, targetPath, ignoreSourceFiles, ignoreTargetFiles } = options
+  const { sourcePath, targetPath, includeExtension = true } = options
 
   // Track migration statistics
   const stats: MigrationStats = {
-    totalFiles: 0,
-    filesProcessed: 0,
-    filesSkipped: 0,
-    importsUpdated: 0,
-    filesWithNoUpdates: 0,
-    errors: 0,
-    totalExports: 0,
-    sourceFilesScanned: 0,
+    sourcePackagesFound: 0,
+    sourcePackagesProcessed: 0,
+    sourcePackagesSkipped: 0,
+    sourceFilesFound: 0,
     sourceFilesWithExports: 0,
     sourceFilesSkipped: 0,
-    targetFilesFound: [],
-    packagesProcessed: 0,
-    packagesSkipped: 0,
-    warnings: []
+    exportsFound: 0,
+    targetFilesFound: 0,
+    targetFilesProcessed: 0,
+    importsUpdated: 0,
+    noChangesNeeded: 0,
+    targetFilesSkipped: 0,
+    importsMigrated: 0
   }
 
-  // Find all directories matching the glob pattern
-  const sourceDirs = await fg(sourcePath, {
-    cwd: targetPath,
-    absolute: true,
-    ignore: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/target-app/**'],
-    followSymbolicLinks: false,
-    onlyDirectories: true
-  })
+  // Track warnings
+  const warnings: string[] = []
 
-  // Find package.json files in the matched directories
-  const packageJsonPaths: string[] = []
-  for (const dir of sourceDirs) {
-    const packageJsonPath = path.join(dir, 'package.json')
-    try {
-      await fs.promises.access(packageJsonPath)
-      packageJsonPaths.push(packageJsonPath)
-    } catch {
-      console.log(`No package.json found in ${dir}, skipping`)
-    }
-  }
+  try {
+    // Find source packages
+    const sourcePackages = await findSourcePackages(sourcePath)
+    stats.sourcePackagesFound = sourcePackages.length
 
-  console.log(`Found ${packageJsonPaths.length} source packages to process`)
+    for (const packagePath of sourcePackages) {
+      console.log(`\nProcessing package: ${packagePath}`)
 
-  for (const packageJsonPath of packageJsonPaths) {
-    try {
-      const packageDir = path.dirname(packageJsonPath)
-      console.log(`\nProcessing package: ${packageDir}`)
-      const packageInfo = await getPackageInfo(packageDir)
-      const exports = await findExports({
-        packagePath: packageDir,
-        ignoreSourceFiles: ignoreSourceFiles,
-        stats
-      })
+      // Find exports in source package
+      const exports = await findExports({ packagePath, stats })
+      stats.exportsFound = exports.reduce((total, info) => total + info.exports.length, 0)
+      stats.sourceFilesWithExports = exports.length
 
-      // Calculate total number of unique exports and source files
-      stats.totalExports += exports.reduce((total, exp) => total + exp.exports.length, 0)
-      stats.sourceFilesWithExports += new Set(exports.map((exp) => exp.source)).size
-      stats.sourceFilesScanned += (
-        await fg('**/*.{ts,tsx}', {
-          cwd: packageDir,
-          ignore: ['**/node_modules/**', '**/dist/**', '**/build/**']
+      // Find files that import from this package
+      const packageName = await getPackageName(packagePath)
+      const targetFiles = await findImports({ packageName, targetPath, stats })
+      stats.targetFilesFound = targetFiles.length
+
+      // Update imports in target files
+      for (const filePath of targetFiles) {
+        stats.targetFilesProcessed++
+        await updateImports({
+          filePath,
+          packageName,
+          exports,
+          includeExtension,
+          warnings,
+          stats
         })
-      ).length
-
-      const files = await findImports({
-        packageName: packageInfo.name,
-        monorepoRoot: targetPath
-      })
-
-      stats.totalFiles += files.length
-      stats.targetFilesFound.push(...files)
-
-      for (const file of files) {
-        const relativeFile = path.relative(targetPath, file)
-        if (ignoreTargetFiles.some((pattern) => micromatch.isMatch(relativeFile, pattern))) {
-          console.log(`Skipping ignored file: ${file} (matches pattern in ${ignoreTargetFiles.join(', ')})`)
-          stats.filesSkipped++
-          continue
-        }
-
-        try {
-          const originalContent = readFileSync(file, 'utf-8')
-          await updateImports({
-            filePath: file,
-            packageName: packageInfo.name,
-            exports: exports,
-            includeExtension: options.includeExtension,
-            warnings: stats.warnings,
-            stats
-          })
-          const updatedContent = readFileSync(file, 'utf-8')
-
-          if (originalContent !== updatedContent) {
-            stats.importsUpdated++
-          } else {
-            stats.filesWithNoUpdates++
-          }
-          stats.filesProcessed++
-        } catch (error) {
-          stats.errors++
-          console.error(`Error processing ${file}:`, error)
-        }
       }
 
-      stats.packagesProcessed++
-    } catch (error) {
-      stats.packagesSkipped++
-      console.error(`Error processing package ${packageJsonPath}:`, error)
+      stats.sourcePackagesProcessed++
     }
-  }
 
-  // Print migration summary
-  console.log('\nMigration Summary')
-  console.log(`Source packages found: ${packageJsonPaths.length}`)
-  console.log(`Source packages processed: ${stats.packagesProcessed}`)
-  console.log(`Source packages skipped: ${stats.packagesSkipped}`)
-  console.log(`Source files found: ${stats.sourceFilesScanned}`)
-  console.log(`Source files with exports: ${stats.sourceFilesWithExports}`)
-  console.log(`Source files skipped: ${stats.sourceFilesSkipped}`)
-  console.log(`Exports found: ${stats.totalExports}`)
-  console.log(`Target files found: ${stats.totalFiles}`)
-  console.log(`Target files processed: ${stats.filesProcessed}`)
-  console.log(`Target files with imports updated: ${stats.importsUpdated}`)
-  console.log(`Target files with no changes needed: ${stats.filesWithNoUpdates}`)
-  console.log(`Target files skipped: ${stats.filesSkipped}`)
+    // Print migration summary
+    console.log('\nMigration Summary')
+    console.log(`Source packages found: ${stats.sourcePackagesFound}`)
+    console.log(`Source packages processed: ${stats.sourcePackagesProcessed}`)
+    console.log(`Source packages skipped: ${stats.sourcePackagesSkipped}`)
+    console.log(`Source files found: ${stats.sourceFilesFound}`)
+    console.log(`Source files with exports: ${stats.sourceFilesWithExports}`)
+    console.log(`Source files skipped: ${stats.sourceFilesSkipped}`)
+    console.log(`Exports found: ${stats.exportsFound}`)
+    console.log(`Target files found: ${stats.targetFilesFound}`)
+    console.log(`Target files processed: ${stats.targetFilesProcessed}`)
+    console.log(`Target files with imports updated: ${stats.importsUpdated}`)
+    console.log(`Target files with no changes needed: ${stats.noChangesNeeded}`)
+    console.log(`Target files skipped: ${stats.targetFilesSkipped}`)
+    console.log(`Total imports migrated: ${stats.importsMigrated}`)
 
-  if (stats.warnings.length > 0) {
-    console.log('\nWarnings:')
-    for (const warning of stats.warnings) {
-      console.log(`  - ${warning}`)
+    if (warnings.length > 0) {
+      console.log('\nWarnings:')
+      warnings.forEach((warning) => console.log(`  - ${warning}`))
     }
+  } catch (error) {
+    console.error('Error during migration:', error)
+    throw error
   }
+}
 
-  if (stats.errors > 0) {
-    console.log(`\nWarning: ${stats.errors} errors encountered during processing`)
-  }
+/**
+ * Gets the package name from package.json
+ *
+ * @param {string} packagePath - Path to the package directory
+ * @returns {Promise<string>} Package name
+ */
+async function getPackageName(packagePath: string): Promise<string> {
+  const packageJsonPath = path.join(packagePath, 'package.json')
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
+  return packageJson.name
+}
+
+/**
+ * Finds all source packages in the given path
+ *
+ * @param {string} sourcePath - Path to search for source packages
+ * @returns {Promise<string[]>} Array of package paths
+ */
+async function findSourcePackages(sourcePath: string): Promise<string[]> {
+  // Use a local variable instead of reassigning the parameter
+  const resolvedPath = path.isAbsolute(sourcePath) ? path.resolve(sourcePath) : path.join(process.cwd(), sourcePath)
+
+  console.log(`Looking for source packages in: ${resolvedPath}`)
+
+  const packageJsonFiles = await fg('{package.json,**/package.json}', {
+    cwd: resolvedPath,
+    ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'],
+    absolute: true
+  })
+
+  console.log(`Found ${packageJsonFiles.length} package.json files:`)
+  packageJsonFiles.forEach((file) => console.log(`  - ${file}`))
+
+  return packageJsonFiles.map(path.dirname)
 }

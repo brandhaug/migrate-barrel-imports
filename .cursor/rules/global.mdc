@@ -1,0 +1,7 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+- Always add tests for new functionality in [migrate-barrel-imports.test.ts](mdc:test/migrate-barrel-imports.test.ts)
+- Always run `CI=test npm run test` to validate changes

@@ -30,7 +30,8 @@ const createTestSetup = (testName: string): TestSetup => {
 
   // Create directory structure
   ;[sourceDir, targetDir].forEach((dir) => {
-    fs.mkdirSync(path.join(dir, 'src'), { recursive: true })
+    fs.mkdirSync(path.join(dir, 'src/components'), { recursive: true })
+    fs.mkdirSync(path.join(dir, 'src/icons/general'), { recursive: true })
   })
 
   return { monorepoDir, sourceDir, targetDir }
@@ -51,7 +52,9 @@ const createPackageJson = (dir: string, name: string, dependencies: Record<strin
 
 const createSourceFiles = (dir: string, exports: Record<string, string>): void => {
   Object.entries(exports).forEach(([filePath, content]) => {
-    fs.writeFileSync(path.join(dir, filePath), content)
+    const fullPath = path.join(dir, filePath)
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true })
+    fs.writeFileSync(fullPath, content)
   })
 }
 
@@ -71,7 +74,8 @@ const cleanOutput = (content: string): string => {
 const runMigrateBarrelImports = async (overrides: Partial<Options> = {}): Promise<void> => {
   const options: Options = {
     ...defaultOptions,
-    sourcePath: 'source-path',
+    sourcePath: overrides.sourcePath || 'source-path',
+    targetPath: overrides.targetPath || 'target-path',
     ...overrides
   }
   await migrateBarrelImports(options)
@@ -253,6 +257,400 @@ export const loadConfig = (config: Config): void => {
 
   tsFeatureTests.forEach(({ name, sourceExports, targetFile, expectedImports }) => {
     it(`should migrate barrel imports for ${name}`, async () => {
+      const { monorepoDir, sourceDir, targetDir } = createTestSetup(name.toLowerCase().replace(/\s+/g, '-'))
+
+      // Setup source package
+      createPackageJson(sourceDir, '@test/source-lib')
+      createSourceFiles(sourceDir, sourceExports)
+
+      // Setup target package
+      createPackageJson(targetDir, '@test/target-app', { '@test/source-lib': '1.0.0' })
+      fs.writeFileSync(path.join(targetDir, targetFile.path), targetFile.content)
+
+      // Run migration
+      await runMigrateBarrelImports({
+        sourcePath: sourceDir,
+        targetPath: monorepoDir,
+        includeExtension: true
+      })
+
+      // Verify results
+      const updatedContent = fs.readFileSync(path.join(targetDir, targetFile.path), 'utf-8')
+      const cleanedContent = cleanOutput(updatedContent)
+
+      expectedImports?.forEach((expected) => {
+        expect(cleanedContent).toContain(expected)
+      })
+
+      // Cleanup
+      fs.rmSync(monorepoDir, { recursive: true, force: true })
+    })
+  })
+
+  // Test case for migrating barrel imports within source package when inside target
+  it('should migrate barrel imports within source package when inside target directory', async () => {
+    const monorepoDir = path.join(process.env.RUNNER_TEMP || os.tmpdir(), `test-source-in-target-${randomUUID()}`)
+    const targetDir = path.join(monorepoDir, 'packages/target-app')
+    const internalSourceDir = path.join(targetDir, 'packages/source-lib')
+
+    // Create directory structure
+    fs.mkdirSync(path.join(targetDir, 'packages'), { recursive: true })
+    fs.mkdirSync(path.join(internalSourceDir, 'src/components'), { recursive: true })
+
+    // Create source package inside target directory
+    createPackageJson(internalSourceDir, '@test/source-lib')
+
+    // Create source package files with nested barrel files and components
+    createSourceFiles(internalSourceDir, {
+      'src/components/Button.tsx': `
+export const Button = ({ children }: { children: React.ReactNode }) => {
+  return <button>{children}</button>;
+};
+`,
+      'src/components/Input.tsx': `
+export const Input = ({ value }: { value: string }) => {
+  return <input value={value} />;
+};
+`,
+      'src/components/index.ts': `
+export * from './Button';
+export * from './Input';
+`,
+      'src/index.ts': `
+export * from './components';
+`
+    })
+
+    // Create a file in the source package that imports from its own barrel
+    createSourceFiles(internalSourceDir, {
+      'src/Form.tsx': `
+import { Button, Input } from "@test/source-lib";
+
+export const Form = () => {
+  return (
+    <form>
+      <Input value="test" />
+      <Button>Submit</Button>
+    </form>
+  );
+};
+`
+    })
+
+    // Create target app package
+    fs.mkdirSync(path.join(targetDir, 'src'), { recursive: true })
+    createPackageJson(targetDir, '@test/target-app', { '@test/source-lib': '1.0.0' })
+    createSourceFiles(targetDir, {
+      'src/App.tsx': `
+import { Button, Input } from "@test/source-lib";
+
+export const App = () => {
+  return (
+    <div>
+      <Input value="test" />
+      <Button>Click me</Button>
+    </div>
+  );
+};
+`
+    })
+
+    // Run migration
+    await runMigrateBarrelImports({
+      sourcePath: internalSourceDir,
+      targetPath: targetDir,
+      includeExtension: true
+    })
+
+    // Verify results for both internal and external files
+    const formContent = fs.readFileSync(path.join(internalSourceDir, 'src/Form.tsx'), 'utf-8')
+    const appContent = fs.readFileSync(path.join(targetDir, 'src/App.tsx'), 'utf-8')
+
+    // Check internal file imports
+    expect(cleanOutput(formContent)).toContain('import { Button } from "@test/source-lib/src/components/Button.tsx"')
+    expect(cleanOutput(formContent)).toContain('import { Input } from "@test/source-lib/src/components/Input.tsx"')
+
+    // Check external file imports
+    expect(cleanOutput(appContent)).toContain('import { Button } from "@test/source-lib/src/components/Button.tsx"')
+    expect(cleanOutput(appContent)).toContain('import { Input } from "@test/source-lib/src/components/Input.tsx"')
+
+    // Cleanup
+    fs.rmSync(monorepoDir, { recursive: true, force: true })
+  })
+
+  // Test cases for barrel file detection and handling
+  const barrelFileTests: TestCase[] = [
+    {
+      name: 'Multiple barrel files',
+      sourceExports: {
+        'src/utils.ts': 'export const add = (a: number, b: number): number => a + b;',
+        'src/constants.ts': 'export const PI = 3.14159;',
+        'src/index.ts': `
+          export * from "./utils";
+          export * from "./constants";
+        `,
+        'src/features/index.ts': `
+          export * from "../utils";
+          export * from "../constants";
+        `,
+        'src/features/math.ts': 'export const multiply = (a: number, b: number): number => a * b;'
+      },
+      targetFile: {
+        path: 'src/calculator.ts',
+        content: `
+          import { add, PI, multiply } from "@test/source-lib";
+          import { add as addFromFeatures } from "@test/source-lib/features";
+        `
+      },
+      expectedImports: [
+        'import { add } from "@test/source-lib/src/utils.ts"',
+        'import { PI } from "@test/source-lib/src/constants.ts"',
+        'import { multiply } from "@test/source-lib/src/features/math.ts"'
+      ]
+    },
+    {
+      name: 'Nested barrel files',
+      sourceExports: {
+        'src/components/index.ts': `
+          export * from "./button";
+          export * from "./input";
+        `,
+        'src/components/button/index.ts': `
+          export * from "./types";
+          export * from "./styles";
+        `,
+        'src/components/button/types.ts': 'export interface ButtonProps { label: string; }',
+        'src/components/button/styles.ts': 'export const buttonStyles = { color: "blue" };',
+        'src/components/input/index.ts': 'export interface InputProps { value: string; }',
+        'src/index.ts': 'export * from "./components";'
+      },
+      targetFile: {
+        path: 'src/app.ts',
+        content: `
+          import { ButtonProps, buttonStyles, InputProps } from "@test/source-lib";
+        `
+      },
+      expectedImports: [
+        'import { ButtonProps } from "@test/source-lib/src/components/button/types.ts"',
+        'import { buttonStyles } from "@test/source-lib/src/components/button/styles.ts"',
+        'import { InputProps } from "@test/source-lib/src/components/input/index.ts"'
+      ]
+    },
+    {
+      name: 'Circular dependencies in barrel files',
+      sourceExports: {
+        'src/a.ts': 'export const a = "a";',
+        'src/b.ts': 'export const b = "b";',
+        'src/index.ts': `
+          export * from "./a";
+          export * from "./b";
+        `,
+        'src/circular.ts': `
+          export * from "./index";
+          export const c = "c";
+        `
+      },
+      targetFile: {
+        path: 'src/app.ts',
+        content: `
+          import { a, b, c } from "@test/source-lib";
+        `
+      },
+      expectedImports: [
+        'import { a } from "@test/source-lib/src/a.ts"',
+        'import { b } from "@test/source-lib/src/b.ts"',
+        'import { c } from "@test/source-lib/src/circular.ts"'
+      ]
+    },
+    {
+      name: 'Mixed exports in barrel files',
+      sourceExports: {
+        'src/utils.ts': 'export const add = (a: number, b: number): number => a + b;',
+        'src/constants.ts': 'export const PI = 3.14159;',
+        'src/index.ts': `
+          export * from "./utils";
+          export const multiply = (a: number, b: number): number => a * b;
+          export default class Calculator {}
+        `
+      },
+      targetFile: {
+        path: 'src/calculator.ts',
+        content: `
+          import { add, PI, multiply, Calculator } from "@test/source-lib";
+        `
+      },
+      expectedImports: [
+        'import { add } from "@test/source-lib/src/utils.ts"',
+        'import { PI } from "@test/source-lib/src/constants.ts"',
+        'import { multiply } from "@test/source-lib/src/index.ts"',
+        'import { Calculator } from "@test/source-lib"'
+      ]
+    },
+    {
+      name: 'External package re-exports',
+      sourceExports: {
+        'src/utils.ts': 'export const add = (a: number, b: number): number => a + b;',
+        'src/index.ts': `
+          export * from "./utils";
+          export { something } from "external-package";
+        `
+      },
+      targetFile: {
+        path: 'src/app.ts',
+        content: `
+          import { add, something } from "@test/source-lib";
+        `
+      },
+      expectedImports: [
+        'import { add } from "@test/source-lib/src/utils.ts"',
+        'import { something } from "external-package"'
+      ]
+    },
+    {
+      name: 'Multiple external package re-exports',
+      sourceExports: {
+        'src/utils.ts': 'export const add = (a: number, b: number): number => a + b;',
+        'src/index.ts': `
+          export * from "./utils";
+          export { something } from "external-package";
+          export { other } from "another-package";
+          export { third } from "third-package";
+        `
+      },
+      targetFile: {
+        path: 'src/app.ts',
+        content: `
+          import { add, something, other, third } from "@test/source-lib";
+        `
+      },
+      expectedImports: [
+        'import { add } from "@test/source-lib/src/utils.ts"',
+        'import { something } from "external-package"',
+        'import { other } from "another-package"',
+        'import { third } from "third-package"'
+      ]
+    },
+    {
+      name: 'Nested barrel files with multiple re-exports',
+      sourceExports: {
+        'src/components/Button.ts': `
+          export const Button = () => {};
+          export const ButtonGroup = () => {};
+        `,
+        'src/components/index.ts': `
+          export * from './Button';
+          export const ComponentA = () => {};
+        `,
+        'src/icons/Icon.ts': `
+          export const Icon = () => {};
+          export const IconGroup = () => {};
+        `,
+        'src/icons/index.ts': `
+          export * from './Icon';
+          export const IconA = () => {};
+        `,
+        'src/index.ts': `
+          export * from './components';
+          export * from './icons';
+          export const RootComponent = () => {};
+        `
+      },
+      targetFile: {
+        path: 'src/app.ts',
+        content: `
+          import { Button, ButtonGroup, ComponentA, Icon, IconGroup, IconA, RootComponent } from "@test/source-lib";
+        `
+      },
+      expectedImports: [
+        'import { Button, ButtonGroup } from "@test/source-lib/src/components/Button.ts"',
+        'import { ComponentA } from "@test/source-lib/src/components/index.ts"',
+        'import { Icon, IconGroup } from "@test/source-lib/src/icons/Icon.ts"',
+        'import { IconA } from "@test/source-lib/src/icons/index.ts"',
+        'import { RootComponent } from "@test/source-lib/src/index.ts"'
+      ]
+    },
+    {
+      name: 'Large barrel file with many exports',
+      sourceExports: {
+        'src/icons/general/IconA.ts': 'export const IconA = () => {};',
+        'src/icons/general/IconB.ts': 'export const IconB = () => {};',
+        'src/icons/general/IconC.ts': 'export const IconC = () => {};',
+        'src/icons/general/index.ts': `
+          export * from './IconA';
+          export * from './IconB';
+          export * from './IconC';
+          export const IconD = () => {};
+          export const IconE = () => {};
+        `
+      },
+      targetFile: {
+        path: 'src/components/IconList.ts',
+        content: `
+          import { IconA, IconB, IconC, IconD, IconE } from "@test/source-lib/icons/general";
+        `
+      },
+      expectedImports: [
+        'import { IconA } from "@test/source-lib/src/icons/general/IconA.ts"',
+        'import { IconB } from "@test/source-lib/src/icons/general/IconB.ts"',
+        'import { IconC } from "@test/source-lib/src/icons/general/IconC.ts"',
+        'import { IconD, IconE } from "@test/source-lib/src/icons/general/index.ts"'
+      ]
+    },
+    {
+      name: 'Barrel file with mixed direct exports and re-exports',
+      sourceExports: {
+        'src/utils/math.ts': `
+          export const add = (a: number, b: number) => a + b;
+          export const subtract = (a: number, b: number) => a - b;
+        `,
+        'src/utils/string.ts': `
+          export const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+          export const lowercase = (s: string) => s.toLowerCase();
+        `,
+        'src/utils/index.ts': `
+          export * from './math';
+          export * from './string';
+          export const combine = (a: number, b: number) => a + b;
+          export const format = (s: string) => s.trim();
+        `
+      },
+      targetFile: {
+        path: 'src/app.ts',
+        content: `
+          import { add, subtract, capitalize, lowercase, combine, format } from "@test/source-lib/utils";
+        `
+      },
+      expectedImports: [
+        'import { add, subtract } from "@test/source-lib/src/utils/math.ts"',
+        'import { capitalize, lowercase } from "@test/source-lib/src/utils/string.ts"',
+        'import { combine, format } from "@test/source-lib/src/utils/index.ts"'
+      ]
+    },
+    {
+      name: 'Only migrate imports from barrel files',
+      sourceExports: {
+        'src/components/Button.tsx': 'export const Button = () => <button>Click me</button>;',
+        'src/components/Button.stories.tsx': 'export const Button = () => <button>Story</button>;',
+        'src/components/index.ts': `
+          export * from "./Button";
+        `,
+        'src/index.ts': `
+          export * from "./components";
+        `
+      },
+      targetFile: {
+        path: 'src/app.tsx',
+        content: `
+          // Import from barrel file
+          import { Button } from "@test/source-lib";
+        `
+      },
+      expectedImports: ['import { Button } from "@test/source-lib/src/components/Button.tsx"']
+    }
+  ]
+
+  barrelFileTests.forEach(({ name, sourceExports, targetFile, expectedImports }) => {
+    it(`should handle ${name}`, async () => {
       const { monorepoDir, sourceDir, targetDir } = createTestSetup(name.toLowerCase().replace(/\s+/g, '-'))
 
       // Setup source package
