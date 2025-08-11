@@ -6,11 +6,15 @@
 		"dist/"
 	],
 	"main": "./dist/index.js",
-	"targets": {
-		"main": {
-			"optimize": true
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
 		}
 	},
+
 	"keywords": [
 		"typescript",
 		"javascript",
@@ -35,7 +39,7 @@
 		"migrate-barrel-imports": "dist/index.js"
 	},
 	"scripts": {
-		"build": "parcel build src/index.ts --no-source-maps",
+		"build": "tsc",
 		"start": "node dist/index.js",
 		"lint": "biome lint",
 		"check-write": "biome check --write",
@@ -65,7 +69,7 @@
 		"execa": "9.6.0",
 		"husky": "9.1.7",
 		"lint-staged": "16.1.5",
-		"parcel": "2.15.4",
+
 		"semantic-release": "24.2.7",
 		"tsc-files": "1.1.4",
 		"tsx": "4.20.3",
