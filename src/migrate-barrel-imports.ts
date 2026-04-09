@@ -931,5 +931,5 @@ async function findSourcePackages(sourcePath: string): Promise<string[]> {
 	console.log(`Found ${packageJsonFiles.length} package.json files:`)
 	packageJsonFiles.forEach((file) => console.log(`  - ${file}`))
 
-	return packageJsonFiles.map(path.dirname)
+	return packageJsonFiles.map((file) => path.dirname(file))
 }
