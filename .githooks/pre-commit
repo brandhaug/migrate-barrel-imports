@@ -1,0 +1,3 @@
+#!/bin/sh
+
+oxfmt --write && oxlint --fix --type-aware
