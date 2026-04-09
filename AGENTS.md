@@ -12,6 +12,7 @@
 
 ```bash
 npm install
+npm run prepare   # configures git hooks
 ```
 
 ## Development Workflow
