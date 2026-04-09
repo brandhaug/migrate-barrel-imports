@@ -42,7 +42,12 @@
 	"scripts": {
 		"build": "tsc",
 		"start": "node dist/index.js",
-		"test": "vitest"
+		"lint": "oxlint --type-aware",
+		"format": "oxfmt --write",
+		"format:check": "oxfmt --check",
+		"prepare": "git config core.hooksPath .githooks",
+		"test": "vitest",
+		"validate": "npm run lint && npm run format:check && npm run test"
 	},
 	"dependencies": {
 		"@babel/generator": "7.28.0",
@@ -58,6 +63,9 @@
 		"@types/babel__traverse": "7.28.0",
 		"@types/micromatch": "4.0.9",
 		"execa": "9.6.0",
+		"oxfmt": "0.44.0",
+		"oxlint": "1.59.0",
+		"oxlint-tsgolint": "0.20.0",
 		"tsx": "4.20.3",
 		"typescript": "5.9.2",
 		"vitest": "3.2.4"
