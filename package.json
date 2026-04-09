@@ -2,9 +2,34 @@
 	"name": "migrate-barrel-imports",
 	"version": "1.7.1",
 	"description": "A CLI tool to migrate barrel imports in JavaScript/TypeScript monorepos",
+	"keywords": [
+		"barrel",
+		"cli",
+		"import",
+		"imports",
+		"javascript",
+		"migrate",
+		"monorepo",
+		"tool",
+		"typescript"
+	],
+	"homepage": "https://github.com/brandhaug/migrate-barrel-imports#readme",
+	"bugs": {
+		"url": "https://github.com/brandhaug/migrate-barrel-imports/issues"
+	},
+	"license": "MIT",
+	"author": "Martin Brandhaug",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/brandhaug/migrate-barrel-imports.git"
+	},
+	"bin": {
+		"migrate-barrel-imports": "dist/index.js"
+	},
 	"files": [
 		"dist/"
 	],
+	"type": "module",
 	"main": "./dist/index.js",
 	"module": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -14,38 +39,15 @@
 			"import": "./dist/index.js"
 		}
 	},
-	"keywords": [
-		"typescript",
-		"javascript",
-		"monorepo",
-		"cli",
-		"tool",
-		"migrate",
-		"barrel",
-		"import",
-		"imports"
-	],
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/brandhaug/migrate-barrel-imports.git"
-	},
-	"bugs": {
-		"url": "https://github.com/brandhaug/migrate-barrel-imports/issues"
-	},
-	"homepage": "https://github.com/brandhaug/migrate-barrel-imports#readme",
-	"type": "module",
-	"bin": {
-		"migrate-barrel-imports": "dist/index.js"
-	},
 	"scripts": {
 		"build": "tsc",
 		"start": "node dist/index.js",
-		"lint": "biome lint",
-		"check-write": "biome check --write",
-		"typecheck": "tsc",
+		"lint": "oxlint --type-aware",
+		"format": "oxfmt --write",
+		"format:check": "oxfmt --check",
 		"prepare": "husky",
 		"test": "vitest",
-		"validate": "npm run lint && npm run typecheck && npm run test"
+		"validate": "npm run lint && npm run format:check && npm run test"
 	},
 	"dependencies": {
 		"@babel/generator": "7.28.0",
@@ -54,11 +56,9 @@
 		"@babel/types": "7.28.2",
 		"commander": "14.0.0",
 		"fast-glob": "3.3.3",
-		"micromatch": "4.0.8",
-		"ts-morph": "26.0.0"
+		"micromatch": "4.0.8"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "2.1.4",
 		"@commitlint/cli": "19.8.1",
 		"@commitlint/config-conventional": "19.8.1",
 		"@types/babel__generator": "7.27.0",
@@ -67,19 +67,19 @@
 		"execa": "9.6.0",
 		"husky": "9.1.7",
 		"lint-staged": "16.1.5",
-		"tsc-files": "1.1.4",
+		"oxfmt": "0.44.0",
+		"oxlint": "1.59.0",
+		"oxlint-tsgolint": "0.20.0",
 		"tsx": "4.20.3",
 		"typescript": "5.9.2",
 		"vitest": "3.2.4"
 	},
-	"author": "Martin Brandhaug",
-	"license": "MIT",
 	"lint-staged": {
 		"*.{ts,json}": [
-			"biome check --write"
+			"oxfmt --write"
 		],
 		"*.ts": [
-			"tsc-files"
+			"oxlint --fix --type-aware"
 		]
 	},
 	"engines": {

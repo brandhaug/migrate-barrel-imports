@@ -12,6 +12,7 @@ export type Options = {
 	ignoreSourceFiles: string[]
 	ignoreTargetFiles: string[]
 	includeExtension?: boolean
+	dryRun?: boolean
 }
 
 export const defaultOptions: Omit<Options, 'sourcePath'> = {

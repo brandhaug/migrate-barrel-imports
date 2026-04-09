@@ -1,0 +1,35 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "unicorn", "oxc"],
+	"categories": {
+		"correctness": "error",
+		"suspicious": "warn",
+		"perf": "warn"
+	},
+	"rules": {
+		"no-param-reassign": "error",
+		"default-param-last": "error",
+		"no-else-return": "error",
+		"no-await-in-loop": "off",
+		"no-shadow": "off",
+		"@typescript-eslint/no-inferrable-types": "error",
+		"@typescript-eslint/prefer-as-const": "error"
+	},
+	"ignorePatterns": [
+		"dist",
+		".next",
+		".turbo",
+		"dev-dist",
+		".zed",
+		".vscode",
+		"routeTree.gen.ts",
+		"src-tauri",
+		".nuxt",
+		"bts.jsonc",
+		".expo",
+		".output",
+		".nitro",
+		".tanstack",
+		"_generated"
+	]
+}

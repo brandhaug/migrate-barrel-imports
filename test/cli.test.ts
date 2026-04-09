@@ -37,7 +37,8 @@ describe.concurrent('cli', (): void => {
 			targetPath: '.',
 			includeExtension: true,
 			ignoreSourceFiles: [],
-			ignoreTargetFiles: []
+			ignoreTargetFiles: [],
+			dryRun: false
 		}
 
 		// Assert that migrateBarrelImports was called with the expected options
@@ -64,7 +65,8 @@ describe.concurrent('cli', (): void => {
 			targetPath: 'target-dir',
 			ignoreSourceFiles: ['**/*.test.ts', '**/node_modules/**'],
 			ignoreTargetFiles: ['**/*.spec.ts', '**/dist/**'],
-			includeExtension: false
+			includeExtension: false,
+			dryRun: false
 		}
 
 		// Assert that migrateBarrelImports was called with the expected options
