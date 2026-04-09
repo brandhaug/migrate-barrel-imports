@@ -28,6 +28,7 @@ export async function main(): Promise<void> {
 			'--no-extension',
 			'Exclude js|jsx|ts|tsx|mjs|cjs file extensions from import statements'
 		)
+		.option('--dry-run', 'Preview changes without modifying files')
 		.allowUnknownOption(false)
 		.parse(process.argv)
 
@@ -51,6 +52,7 @@ export async function main(): Promise<void> {
 			? options.ignoreTargetFiles.split(',')
 			: defaultOptions.ignoreTargetFiles,
 		includeExtension:
-			options.extension !== false ? true : defaultOptions.includeExtension
+			options.extension !== false ? true : defaultOptions.includeExtension,
+		dryRun: options.dryRun ?? false
 	})
 }

@@ -15,7 +15,7 @@
  * 4. Preserves original import names and types
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import _generate from '@babel/generator'
 import type { ParserOptions } from '@babel/parser'
@@ -87,19 +87,6 @@ const BABEL_CONFIG: ParserOptions = {
 }
 
 /**
- * @property {string} name - Package name
- * @property {Record<string, string>} [exports] - Package exports configuration
- * @property {string} [main] - Main entry point
- * @property {string} [types] - TypeScript types entry point
- */
-interface PackageJson {
-	name: string
-	exports?: Record<string, string>
-	main?: string
-	types?: string
-}
-
-/**
  * @property {string} source - Source file path containing exports
  * @property {string[]} exports - Array of exported names from the file
  * @property {boolean} [isIgnored] - Whether the file is ignored
@@ -145,6 +132,7 @@ interface FindExportsParams {
 interface FindImportsParams {
 	packageName: string
 	targetPath: string
+	ignoreTargetFiles?: string[]
 	stats?: MigrationStats
 }
 
@@ -158,21 +146,9 @@ interface UpdateImportsParams {
 	packageName: string
 	exports: ExportInfo[]
 	includeExtension?: boolean
+	dryRun?: boolean
 	warnings?: string[]
 	stats?: MigrationStats
-}
-
-/**
- * Reads and parses the package.json file for a given package path
- *
- * @param {string} packagePath - The path to the package directory
- * @returns {Promise<PackageJson>} The parsed package.json contents
- * @throws {Error} If package.json cannot be read or parsed
- */
-async function _getPackageInfo(packagePath: string): Promise<PackageJson> {
-	const packageJsonPath = path.join(packagePath, 'package.json')
-	const content = readFileSync(packageJsonPath, 'utf-8')
-	return JSON.parse(content)
 }
 
 /**
@@ -220,21 +196,15 @@ function getExportNames(
  */
 async function isBarrelFile(filePath: string): Promise<boolean> {
 	try {
-		const content = readFileSync(filePath, 'utf-8')
+		const content = await readFile(filePath, 'utf-8')
 		const ast = parse(content, BABEL_CONFIG)
 		let hasReExports = false
-		let _hasDirectExports = false
 
 		traverse(ast, {
 			ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
 				if (path.node.source) {
 					hasReExports = true
-				} else {
-					_hasDirectExports = true
 				}
-			},
-			ExportDefaultDeclaration() {
-				_hasDirectExports = true
 			}
 		})
 
@@ -266,8 +236,6 @@ async function findExports({
 }: FindExportsParams): Promise<ExportInfo[]> {
 	const exports: ExportInfo[] = []
 	const barrelFiles = new Set<string>()
-	const _processedFiles = new Set<string>()
-	const _exportSources: Record<string, string> = {}
 	const exportFiles: Record<string, string[]> = {}
 
 	console.log(`Scanning for TypeScript and JavaScript files in: ${packagePath}`)
@@ -276,6 +244,10 @@ async function findExports({
 		ignore: ['**/node_modules/**', '**/dist/**', '**/build/**']
 	})
 	console.log(`Found ${allFiles.length} files`)
+
+	if (stats) {
+		stats.sourceFilesFound = allFiles.length
+	}
 
 	// First pass: identify barrel files
 	for (const file of allFiles) {
@@ -301,7 +273,7 @@ async function findExports({
 
 		const fullPath = path.join(packagePath, file)
 		console.log(`\nProcessing file: ${file}`)
-		const content = readFileSync(fullPath, 'utf-8')
+		const content = await readFile(fullPath, 'utf-8')
 
 		try {
 			const ast = parse(content, BABEL_CONFIG)
@@ -431,7 +403,7 @@ async function findExports({
 						exportSources: fileExportSources
 					}),
 					...(defaultExportNames.length > 0 && { defaultExportNames }),
-					...((await isBarrelFile(fullPath)) && { isBarrelFile: true }),
+					...(barrelFiles.has(file) && { isBarrelFile: true }),
 					...(Object.keys(exportFiles).length > 0 && { exportFiles })
 				})
 
@@ -458,6 +430,7 @@ async function findExports({
  * 2. Parses each file's AST to find imports
  * 3. Handles both direct package imports and subpath imports
  * 4. Excludes node_modules, dist, and build directories
+ * 5. Filters out files matching ignore patterns
  *
  * @param {FindImportsParams} params - Parameters for finding imports
  * @returns {Promise<string[]>} Array of file paths that import from the package
@@ -465,7 +438,8 @@ async function findExports({
 async function findImports({
 	packageName,
 	targetPath,
-	stats: _stats
+	ignoreTargetFiles = [],
+	stats
 }: FindImportsParams): Promise<string[]> {
 	try {
 		const allFiles = new Set<string>()
@@ -482,8 +456,21 @@ async function findImports({
 
 		// Scan each file for imports
 		for (const file of files) {
+			// Check if file matches any ignore pattern
+			const relativePath = path.relative(targetPath, file)
+			if (
+				ignoreTargetFiles.some((pattern) =>
+					micromatch.isMatch(relativePath, pattern)
+				)
+			) {
+				if (stats) {
+					stats.targetFilesSkipped++
+				}
+				continue
+			}
+
 			try {
-				const content = readFileSync(file, 'utf-8')
+				const content = await readFile(file, 'utf-8')
 				const ast = parse(content, BABEL_CONFIG)
 
 				traverse(ast, {
@@ -541,11 +528,12 @@ async function updateImports({
 	packageName,
 	exports,
 	includeExtension = true,
-	warnings: _warnings,
-	stats: _stats
+	dryRun = false,
+	warnings,
+	stats
 }: UpdateImportsParams): Promise<void> {
 	console.log(`\nProcessing file: ${filePath}`)
-	const content = readFileSync(filePath, 'utf-8')
+	const content = await readFile(filePath, 'utf-8')
 	let modified = false
 
 	try {
@@ -568,7 +556,6 @@ async function updateImports({
 		> = []
 
 		for (const declaration of importDeclarations) {
-			const _importSource = declaration.source.value
 			const specifiers = declaration.specifiers
 
 			for (const specifier of specifiers) {
@@ -647,13 +634,13 @@ async function updateImports({
 						}
 
 						// Find the best source file for this export
-						const exportFiles = exportInfo.exportFiles?.[importName] || []
-						let bestSourceFile = exportFiles[0] // Default to first file if no better option
+						const exportFilesList = exportInfo.exportFiles?.[importName] || []
+						let bestSourceFile = exportFilesList[0] // Default to first file if no better option
 
 						// Prefer main source files over auxiliary files
-						if (exportFiles.length > 1) {
+						if (exportFilesList.length > 1) {
 							// Remove story files, test files, and other auxiliary files from consideration
-							const mainFiles = exportFiles.filter(
+							const mainFiles = exportFilesList.filter(
 								(file: string) =>
 									!file.includes('.stories.') &&
 									!file.includes('.test.') &&
@@ -700,6 +687,12 @@ async function updateImports({
 							continue
 						}
 
+						// Could not resolve this import to a source file
+						if (warnings) {
+							warnings.push(
+								`Could not resolve "${importName}" to a source file in ${filePath}`
+							)
+						}
 						remainingSpecifiers.push(specifier)
 					} else if (
 						isImportDefaultSpecifier(specifier) ||
@@ -734,8 +727,8 @@ async function updateImports({
 						stringLiteral(source)
 					)
 				)
-				if (_stats) {
-					_stats.importsMigrated += specifiers.length
+				if (stats) {
+					stats.importsMigrated += specifiers.length
 				}
 			}
 		}
@@ -754,7 +747,6 @@ async function updateImports({
 		}
 
 		if (modified) {
-			// Write changes back to file
 			const output = generate(
 				ast,
 				{
@@ -764,14 +756,19 @@ async function updateImports({
 				},
 				content
 			).code
-			writeFileSync(filePath, output)
-			console.log(`Writing changes to ${filePath}`)
 
-			if (_stats) {
-				_stats.importsUpdated++
+			if (dryRun) {
+				console.log(`[dry-run] Would update imports in ${filePath}`)
+			} else {
+				await writeFile(filePath, output)
+				console.log(`Writing changes to ${filePath}`)
 			}
-		} else if (_stats) {
-			_stats.noChangesNeeded++
+
+			if (stats) {
+				stats.importsUpdated++
+			}
+		} else if (stats) {
+			stats.noChangesNeeded++
 		}
 	} catch (error) {
 		console.error(`Error updating imports in ${filePath}:`, error)
@@ -795,7 +792,13 @@ async function updateImports({
 export async function migrateBarrelImports(
 	options: MigrationOptions
 ): Promise<void> {
-	const { sourcePath, targetPath, includeExtension = true } = options
+	const {
+		sourcePath,
+		targetPath,
+		ignoreTargetFiles = [],
+		includeExtension = true,
+		dryRun = false
+	} = options
 
 	// Track migration statistics
 	const stats: MigrationStats = {
@@ -817,6 +820,10 @@ export async function migrateBarrelImports(
 	// Track warnings
 	const warnings: string[] = []
 
+	if (dryRun) {
+		console.log('[dry-run] Running in dry-run mode, no files will be modified')
+	}
+
 	try {
 		// Find source packages
 		const sourcePackages = await findSourcePackages(sourcePath)
@@ -835,7 +842,12 @@ export async function migrateBarrelImports(
 
 			// Find files that import from this package
 			const packageName = await getPackageName(packagePath)
-			const targetFiles = await findImports({ packageName, targetPath, stats })
+			const targetFiles = await findImports({
+				packageName,
+				targetPath,
+				ignoreTargetFiles,
+				stats
+			})
 			stats.targetFilesFound = targetFiles.length
 
 			// Update imports in target files
@@ -846,6 +858,7 @@ export async function migrateBarrelImports(
 					packageName,
 					exports,
 					includeExtension,
+					dryRun,
 					warnings,
 					stats
 				})
@@ -856,6 +869,9 @@ export async function migrateBarrelImports(
 
 		// Print migration summary
 		console.log('\nMigration Summary')
+		if (dryRun) {
+			console.log('Mode: dry-run (no files were modified)')
+		}
 		console.log(`Source packages found: ${stats.sourcePackagesFound}`)
 		console.log(`Source packages processed: ${stats.sourcePackagesProcessed}`)
 		console.log(`Source packages skipped: ${stats.sourcePackagesSkipped}`)
@@ -888,7 +904,7 @@ export async function migrateBarrelImports(
  */
 async function getPackageName(packagePath: string): Promise<string> {
 	const packageJsonPath = path.join(packagePath, 'package.json')
-	const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
+	const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'))
 	return packageJson.name
 }
 
