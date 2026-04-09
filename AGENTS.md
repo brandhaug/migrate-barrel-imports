@@ -12,7 +12,6 @@
 
 ```bash
 npm install
-npm run prepare   # configures git hooks
 ```
 
 ## Development Workflow
@@ -20,7 +19,6 @@ npm run prepare   # configures git hooks
 - Source code lives in `src/`, tests in `test/`
 - Build with `npm run build` (runs `tsc`, outputs to `dist/`)
 - Run the CLI locally: `npm start` or `node dist/index.js`
-- Pre-commit hook runs `oxfmt --write` and `oxlint --fix --type-aware` automatically
 
 ## Testing
 
@@ -30,22 +28,6 @@ npm run prepare   # configures git hooks
 - Test files mirror source files: `test/<name>.test.ts`
 - Always add tests for new functionality in `test/migrate-barrel-imports.test.ts`
 
-## Code Style
-
-- **Formatter:** oxfmt (tabs, single quotes, no semicolons, no trailing commas)
-- **Linter:** oxlint with TypeScript, Unicorn, and OXC plugins
-- Lint: `npm run lint`
-- Format: `npm run format`
-- Format check: `npm run format:check`
-- Full validation: `npm run validate` (lint + format check + test)
-
-## CI/CD
-
-- **PR checks** (`.github/workflows/pr.yml`): lint, format check, and tests run on PRs to `master`
-- **Release** (`.github/workflows/release.yml`): release-please on push to `master`, publishes to npm with provenance
-
 ## Pull Request Guidelines
 
 - Target branch: `master`
-- All PRs must pass: `npm run lint`, `npm run format:check`, `npm run test`
-- Releases are automated via release-please
