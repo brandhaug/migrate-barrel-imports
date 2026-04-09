@@ -13,11 +13,11 @@ Inspired by [Please Stop Using Barrel Files](https://tkdodo.eu/blog/please-stop-
 
 ```typescript
 // Before
-import { foo, bar } from '@repo/package';
+import { foo, bar } from '@repo/package'
 
 // After
-import { foo } from '@repo/package/src/foo';
-import { bar } from '@repo/package/src/bar';
+import { foo } from '@repo/package/src/foo'
+import { bar } from '@repo/package/src/bar'
 ```
 
 ## Features
@@ -51,19 +51,19 @@ npx migrate-barrel-imports <source-path> [target-path] [options]
 
 ### Arguments
 
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `source-path` | Directory pattern for source packages (e.g. `libs/*`, `packages/{ui,core}`) | *(required)* |
-| `target-path` | Directory where imports should be migrated | `.` (current directory) |
+| Argument      | Description                                                                 | Default                 |
+| ------------- | --------------------------------------------------------------------------- | ----------------------- |
+| `source-path` | Directory pattern for source packages (e.g. `libs/*`, `packages/{ui,core}`) | _(required)_            |
+| `target-path` | Directory where imports should be migrated                                  | `.` (current directory) |
 
 ### Options
 
-| Option | Description |
-|--------|-------------|
+| Option                             | Description                                                   |
+| ---------------------------------- | ------------------------------------------------------------- |
 | `--ignore-source-files <patterns>` | Comma-separated file patterns to ignore in source directories |
 | `--ignore-target-files <patterns>` | Comma-separated file patterns to ignore in target directories |
-| `--no-extension` | Omit file extensions from rewritten import paths |
-| `--dry-run` | Preview changes without modifying files |
+| `--no-extension`                   | Omit file extensions from rewritten import paths              |
+| `--dry-run`                        | Preview changes without modifying files                       |
 
 ### Examples
 
