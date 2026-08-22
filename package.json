@@ -80,8 +80,8 @@
   },
   "packageManager": "bun@1.4.0",
   "catalog": {
-    "@babel/generator": "7.28.0",
-    "@babel/parser": "8.0.4",
+    "@babel/generator": "8.0.0",
+    "@babel/parser": "7.28.0",
     "@babel/traverse": "7.28.0",
     "@babel/types": "7.28.2",
     "commander": "14.0.0",
