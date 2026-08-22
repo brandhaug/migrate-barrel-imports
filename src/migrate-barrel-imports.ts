@@ -781,7 +781,7 @@ export async function migrateBarrelImports(
 	const {
 		sourcePath,
 		targetPath,
-		ignoreTargetFiles = [],
+		ignoreTargetFiles,
 		includeExtension = true,
 		dryRun = false
 	} = options
