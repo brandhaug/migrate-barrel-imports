@@ -1,26 +1,25 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { main } from '../src/cli'
-import { migrateBarrelImports } from '../src/migrate-barrel-imports'
+import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import type { Options } from '../src/options'
 
-vi.mock('@clack/prompts', (): object => ({
-	intro: vi.fn(),
-	outro: vi.fn(),
-	log: { info: vi.fn() },
-	cancel: vi.fn(),
-	text: vi.fn(),
-	confirm: vi.fn(),
-	isCancel: vi.fn((): boolean => false)
+const clackMocks = {
+	intro: mock((): void => {}),
+	outro: mock((): void => {}),
+	log: { info: mock((): void => {}) },
+	cancel: mock((): void => {}),
+	text: mock((): string | Promise<string> => ''),
+	confirm: mock((): boolean | Promise<boolean> => false),
+	isCancel: mock((): boolean => false)
+}
+
+mock.module('@clack/prompts', (): object => clackMocks)
+
+const migrateBarrelImports = mock(async (): Promise<void> => {})
+mock.module('../src/migrate-barrel-imports', (): object => ({
+	migrateBarrelImports
 }))
 
-vi.mock('../src/migrate-barrel-imports', (): object => ({
-	migrateBarrelImports: vi.fn()
-}))
-
-import * as clack from '@clack/prompts'
-
-const mockedText = vi.mocked(clack.text)
-const mockedConfirm = vi.mocked(clack.confirm)
+// Import modules under test after mocks are registered
+const { main } = await import('../src/cli')
 
 type PromptAnswers = {
 	sourcePath: string
@@ -42,23 +41,25 @@ function mockAnswers(overrides: Partial<PromptAnswers> = {}): PromptAnswers {
 		...overrides
 	}
 
-	mockedText.mockImplementation(async ({ message }: { message?: string }) => {
-		if (message?.startsWith('Source path')) {
-			return answers.sourcePath
+	clackMocks.text.mockImplementation(
+		async ({ message }: { message?: string }) => {
+			if (message?.startsWith('Source path')) {
+				return answers.sourcePath
+			}
+			if (message?.startsWith('Path to the directory')) {
+				return answers.targetPath
+			}
+			if (message?.startsWith('File patterns to ignore in source')) {
+				return answers.ignoreSourceFilesInput
+			}
+			if (message?.startsWith('File patterns to ignore in target')) {
+				return answers.ignoreTargetFilesInput
+			}
+			throw new Error(`Unexpected text prompt: ${String(message)}`)
 		}
-		if (message?.startsWith('Path to the directory')) {
-			return answers.targetPath
-		}
-		if (message?.startsWith('File patterns to ignore in source')) {
-			return answers.ignoreSourceFilesInput
-		}
-		if (message?.startsWith('File patterns to ignore in target')) {
-			return answers.ignoreTargetFilesInput
-		}
-		throw new Error(`Unexpected text prompt: ${String(message)}`)
-	})
+	)
 
-	mockedConfirm.mockImplementation(
+	clackMocks.confirm.mockImplementation(
 		async ({ message }: { message?: string }) => {
 			if (message?.includes('Include js|jsx|ts|tsx|mjs|cjs')) {
 				return answers.includeExtension
@@ -75,13 +76,12 @@ function mockAnswers(overrides: Partial<PromptAnswers> = {}): PromptAnswers {
 
 describe('index', (): void => {
 	beforeEach((): void => {
-		vi.clearAllMocks()
-		vi.mocked(clack.isCancel).mockReturnValue(false)
-	})
-
-	afterEach((): void => {
-		vi.resetAllMocks()
-		vi.mocked(clack.isCancel).mockReturnValue(false)
+		clackMocks.text.mockReset()
+		clackMocks.confirm.mockReset()
+		migrateBarrelImports.mockReset()
+		migrateBarrelImports.mockImplementation(async (): Promise<void> => {})
+		clackMocks.isCancel.mockReturnValue(false)
+		clackMocks.cancel.mockClear()
 	})
 
 	it('should pass collected prompt values to migrateBarrelImports', async (): Promise<void> => {
@@ -126,19 +126,19 @@ describe('index', (): void => {
 
 	it('should exit cleanly when a prompt is cancelled', async (): Promise<void> => {
 		mockAnswers()
-		vi.mocked(clack.isCancel).mockReturnValue(true)
+		clackMocks.isCancel.mockReturnValue(true)
 
 		await main()
 
 		expect(migrateBarrelImports).not.toHaveBeenCalled()
-		expect(clack.cancel).toHaveBeenCalledWith('Migration cancelled')
+		expect(clackMocks.cancel).toHaveBeenCalledWith('Migration cancelled')
 	})
 
 	it('should treat an empty source path as invalid', async (): Promise<void> => {
 		mockAnswers({ sourcePath: '' })
 
 		let validationError: string | undefined
-		mockedText.mockImplementation(
+		clackMocks.text.mockImplementation(
 			async ({
 				validate
 			}: {
