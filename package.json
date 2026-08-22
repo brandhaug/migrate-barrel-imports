@@ -47,7 +47,7 @@
 		"format": "oxfmt --write",
 		"format:check": "oxfmt --check",
 		"prepare": "git config core.hooksPath .githooks",
-		"test": "vitest",
+		"test": "bun test --isolate",
 		"validate": "npm run lint && npm run format:check && npm run test"
 	},
 	"dependencies": {
@@ -67,8 +67,7 @@
 		"oxfmt": "catalog:",
 		"oxlint": "catalog:",
 		"oxlint-tsgolint": "catalog:",
-		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"typescript": "catalog:"
 	},
 	"engines": {
 		"bun": ">=1.4.0"
