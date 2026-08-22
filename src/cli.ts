@@ -1,58 +1,106 @@
-import { Command } from 'commander'
+import * as p from '@clack/prompts'
 import { migrateBarrelImports } from './migrate-barrel-imports'
 import { defaultOptions } from './options'
 
-export async function main(): Promise<void> {
-	const program = new Command()
-
-	program
-		.name('migrate-barrel-imports')
-		.description('CLI tool to migrate barrel files imports to direct imports')
-		.argument(
-			'<source-path>',
-			'Glob pattern for source packages containing barrel files (e.g. "libs/*")'
-		)
-		.argument(
-			'[target-path]',
-			'Path to the directory where imports should be migrated (default: current directory)'
-		)
-		.option(
-			'--ignore-source-files <patterns>',
-			'Comma-separated list of file patterns to ignore in source directory'
-		)
-		.option(
-			'--ignore-target-files <patterns>',
-			'Comma-separated list of file patterns to ignore in target directory'
-		)
-		.option(
-			'--no-extension',
-			'Exclude js|jsx|ts|tsx|mjs|cjs file extensions from import statements'
-		)
-		.option('--dry-run', 'Preview changes without modifying files')
-		.allowUnknownOption(false)
-		.parse(process.argv)
-
-	const args = program.args
-	if (!args[0]) {
-		console.error('Error: source-path is required')
-		process.exit(1)
+function splitPatterns(value: string | undefined): string[] {
+	if (value === undefined) {
+		return []
 	}
 
-	const sourcePath = args[0]
-	const targetPath = args[1] || defaultOptions.targetPath
-	const options = program.opts()
+	return value
+		.split(',')
+		.map((pattern) => pattern.trim())
+		.filter((pattern): pattern is string => pattern.length > 0)
+}
+
+export async function main(): Promise<void> {
+	p.intro('migrate-barrel-imports')
+	p.log.info(
+		'Migrate barrel files imports to direct imports in JavaScript/TypeScript monorepos'
+	)
+
+	const sourcePath = await p.text({
+		message: 'Source path/glob for packages containing barrel files',
+		placeholder: 'libs/*',
+		validate: (value: string | undefined): string | Error | undefined => {
+			if (value === undefined || value.trim().length === 0) {
+				return 'Source path is required'
+			}
+			return undefined
+		}
+	})
+
+	if (p.isCancel(sourcePath)) {
+		p.cancel('Migration cancelled')
+		return
+	}
+
+	const targetPath = await p.text({
+		message: 'Path to the directory where imports should be migrated',
+		placeholder: defaultOptions.targetPath,
+		defaultValue: defaultOptions.targetPath
+	})
+
+	if (p.isCancel(targetPath)) {
+		p.cancel('Migration cancelled')
+		return
+	}
+
+	const includeExtension = await p.confirm({
+		message:
+			'Include js|jsx|ts|tsx|mjs|cjs file extensions in import statements?',
+		initialValue: true
+	})
+
+	if (p.isCancel(includeExtension)) {
+		p.cancel('Migration cancelled')
+		return
+	}
+
+	const ignoreSourceFilesInput = await p.text({
+		message: 'File patterns to ignore in source directory (comma-separated)',
+		placeholder: 'e.g. **/*.test.ts, **/node_modules/**'
+	})
+
+	if (p.isCancel(ignoreSourceFilesInput)) {
+		p.cancel('Migration cancelled')
+		return
+	}
+
+	const ignoreTargetFilesInput = await p.text({
+		message: 'File patterns to ignore in target directory (comma-separated)',
+		placeholder: 'e.g. **/*.spec.ts, **/dist/**'
+	})
+
+	if (p.isCancel(ignoreTargetFilesInput)) {
+		p.cancel('Migration cancelled')
+		return
+	}
+
+	const dryRun = await p.confirm({
+		message: 'Run in dry-run mode (preview changes without modifying files)?',
+		initialValue: false
+	})
+
+	if (p.isCancel(dryRun)) {
+		p.cancel('Migration cancelled')
+		return
+	}
 
 	await migrateBarrelImports({
 		sourcePath,
 		targetPath,
-		ignoreSourceFiles: options.ignoreSourceFiles
-			? options.ignoreSourceFiles.split(',')
-			: defaultOptions.ignoreSourceFiles,
-		ignoreTargetFiles: options.ignoreTargetFiles
-			? options.ignoreTargetFiles.split(',')
-			: defaultOptions.ignoreTargetFiles,
-		includeExtension:
-			options.extension !== false ? true : defaultOptions.includeExtension,
-		dryRun: options.dryRun ?? false
+		ignoreSourceFiles:
+			splitPatterns(ignoreSourceFilesInput).length > 0
+				? splitPatterns(ignoreSourceFilesInput)
+				: defaultOptions.ignoreSourceFiles,
+		ignoreTargetFiles:
+			splitPatterns(ignoreTargetFilesInput).length > 0
+				? splitPatterns(ignoreTargetFilesInput)
+				: defaultOptions.ignoreTargetFiles,
+		includeExtension,
+		dryRun
 	})
+
+	p.outro('Done')
 }
