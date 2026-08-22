@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/brandhaug/migrate-barrel-imports/compare/v1.7.3...v2.0.0) (2026-08-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* replace commander with @clack/prompts ([#24](https://github.com/brandhaug/migrate-barrel-imports/issues/24))
+
+### Features
+
+* replace commander with @clack/prompts ([#24](https://github.com/brandhaug/migrate-barrel-imports/issues/24)) ([ff45102](https://github.com/brandhaug/migrate-barrel-imports/commit/ff4510201526a8885acb40f486536a904a5c3f0d))
+
 ## [1.7.3](https://github.com/brandhaug/migrate-barrel-imports/compare/v1.7.2...v1.7.3) (2026-04-09)
 
 ### Bug Fixes
