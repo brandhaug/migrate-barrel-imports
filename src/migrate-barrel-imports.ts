@@ -61,28 +61,14 @@ const BABEL_CONFIG: ParserOptions = {
 		'typescript',
 		'jsx',
 		'decorators-legacy',
-		'classProperties',
-		'classPrivateProperties',
-		'classPrivateMethods',
 		'exportDefaultFrom',
-		'exportNamespaceFrom',
 		'functionBind',
 		'functionSent',
-		'dynamicImport',
-		'nullishCoalescingOperator',
-		'optionalChaining',
-		'objectRestSpread',
-		'asyncGenerators',
 		'doExpressions',
 		'importMeta',
-		'logicalAssignment',
 		'moduleBlocks',
-		'moduleStringNames',
-		'numericSeparator',
 		'partialApplication',
-		'privateIn',
-		'throwExpressions',
-		'topLevelAwait'
+		'throwExpressions'
 	]
 }
 
@@ -795,7 +781,7 @@ export async function migrateBarrelImports(
 	const {
 		sourcePath,
 		targetPath,
-		ignoreTargetFiles = [],
+		ignoreTargetFiles,
 		includeExtension = true,
 		dryRun = false
 	} = options
