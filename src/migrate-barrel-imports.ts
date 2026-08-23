@@ -47,7 +47,7 @@ import {
 } from '@babel/types'
 import fg from 'fast-glob'
 import micromatch from 'micromatch'
-import type { Options as MigrationOptions } from './options'
+import type { Options as MigrationOptions } from './options.js'
 
 // @ts-expect-error
 const generate: typeof _generate = _generate.default || _generate
