@@ -24,8 +24,6 @@ const { main } = await import('../src/cli')
 type PromptAnswers = {
 	sourcePath: string
 	targetPath: string
-	ignoreSourceFilesInput: string
-	ignoreTargetFilesInput: string
 	includeExtension: boolean
 	dryRun: boolean
 }
@@ -34,8 +32,6 @@ function mockAnswers(overrides: Partial<PromptAnswers> = {}): PromptAnswers {
 	const answers: PromptAnswers = {
 		sourcePath: 'libs/*',
 		targetPath: '.',
-		ignoreSourceFilesInput: '',
-		ignoreTargetFilesInput: '',
 		includeExtension: true,
 		dryRun: false,
 		...overrides
@@ -48,12 +44,6 @@ function mockAnswers(overrides: Partial<PromptAnswers> = {}): PromptAnswers {
 			}
 			if (message?.startsWith('Path to the directory')) {
 				return answers.targetPath
-			}
-			if (message?.startsWith('File patterns to ignore in source')) {
-				return answers.ignoreSourceFilesInput
-			}
-			if (message?.startsWith('File patterns to ignore in target')) {
-				return answers.ignoreTargetFilesInput
 			}
 			throw new Error(`Unexpected text prompt: ${String(message)}`)
 		}
@@ -87,8 +77,6 @@ describe('index', (): void => {
 	it('should pass collected prompt values to migrateBarrelImports', async (): Promise<void> => {
 		mockAnswers({
 			targetPath: 'target-dir',
-			ignoreSourceFilesInput: '**/*.test.ts, **/node_modules/**',
-			ignoreTargetFilesInput: '**/*.spec.ts, **/dist/**',
 			includeExtension: false,
 			dryRun: true
 		})
@@ -98,6 +86,36 @@ describe('index', (): void => {
 		const options: Options = {
 			sourcePath: 'libs/*',
 			targetPath: 'target-dir',
+			ignoreSourceFiles: [],
+			ignoreTargetFiles: [],
+			includeExtension: false,
+			dryRun: true
+		}
+
+		expect(migrateBarrelImports).toHaveBeenCalledWith(options)
+	})
+
+	it('should prefer CLI arguments over prompts', async (): Promise<void> => {
+		mockAnswers({
+			targetPath: 'target-dir',
+			includeExtension: false,
+			dryRun: true
+		})
+
+		await main([
+			'libs/*',
+			'cli-target-dir',
+			'--no-extension',
+			'--dry-run',
+			'--ignore-source-files',
+			'**/*.test.ts, **/node_modules/**',
+			'--ignore-target-files',
+			'**/*.spec.ts, **/dist/**'
+		])
+
+		const options: Options = {
+			sourcePath: 'libs/*',
+			targetPath: 'cli-target-dir',
 			ignoreSourceFiles: ['**/*.test.ts', '**/node_modules/**'],
 			ignoreTargetFiles: ['**/*.spec.ts', '**/dist/**'],
 			includeExtension: false,
@@ -105,6 +123,8 @@ describe('index', (): void => {
 		}
 
 		expect(migrateBarrelImports).toHaveBeenCalledWith(options)
+		expect(clackMocks.text).not.toHaveBeenCalled()
+		expect(clackMocks.confirm).not.toHaveBeenCalled()
 	})
 
 	it('should fall back to default options when prompts are left empty', async (): Promise<void> => {
