@@ -58,13 +58,13 @@ npx migrate-barrel-imports <source-path> [target-path] [options]
 
 ### Options
 
-| Option                             | Description                                                   | Default                                  |
-| ---------------------------------- | ------------------------------------------------------------- | ---------------------------------------- |
-| `--extension` / `--no-extension`   | Include file extensions in rewritten import paths             | `--extension`                            |
-| `--ignore-source-files <patterns>` | Comma-separated file patterns to ignore in source directories | _(none)_                                 |
-| `--ignore-target-files <patterns>` | Comma-separated file patterns to ignore in target directories | _(none)_                                 |
-| `--dry-run`                        | Preview changes without modifying files                       | off                                      |
-| `-h`, `--help`                     | Show help                                                     | —                                        |
+| Option                             | Description                                                   | Default       |
+| ---------------------------------- | ------------------------------------------------------------- | ------------- |
+| `--extension` / `--no-extension`   | Include file extensions in rewritten import paths             | `--extension` |
+| `--ignore-source-files <patterns>` | Comma-separated file patterns to ignore in source directories | _(none)_      |
+| `--ignore-target-files <patterns>` | Comma-separated file patterns to ignore in target directories | _(none)_      |
+| `--dry-run`                        | Preview changes without modifying files                       | off           |
+| `-h`, `--help`                     | Show help                                                     | —             |
 
 When arguments or flags are omitted, the CLI falls back to interactive prompts
 for the missing values only. Supplying the source path (and any flags) runs the
