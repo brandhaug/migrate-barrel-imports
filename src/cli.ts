@@ -16,7 +16,11 @@ export type CliArgs = Partial<Omit<Options, 'targetPath'>> & {
  * `--ignore-target-files <patterns>`, `--dry-run`.
  */
 export function parseCliArgs(argv: readonly string[]): CliArgs {
-	const { args: withoutNegation, noExtension } = extractNoExtension(argv)
+	const {
+		args: withoutNegation,
+		noExtension,
+		noDryRun
+	} = extractNegations(argv)
 	const { values, positionals } = parseArgs({
 		args: [...withoutNegation],
 		allowPositionals: true,
@@ -57,7 +61,7 @@ Options:
   --extension / --no-extension     Include file extensions in imports
   --ignore-source-files <patterns> Comma-separated patterns to ignore in source dirs
   --ignore-target-files <patterns> Comma-separated patterns to ignore in target dirs
-  --dry-run                        Preview changes without modifying files
+  --dry-run / --no-dry-run       Preview changes without modifying files
   -h, --help                       Show this help`)
 		process.exit(0)
 	}
@@ -66,18 +70,32 @@ Options:
 		sourcePath: positionals[0],
 		targetPath: positionals[1],
 		includeExtension: values.extension ?? (noExtension ? false : undefined),
-		dryRun: values['dry-run'],
+		dryRun: noDryRun ? false : values['dry-run'],
 		ignoreSourceFiles: splitPatterns(values['ignore-source-files']),
 		ignoreTargetFiles: splitPatterns(values['ignore-target-files'])
 	}
 }
 
-function extractNoExtension(argv: readonly string[]): {
+function extractNegations(argv: readonly string[]): {
 	args: string[]
 	noExtension: boolean
+	noDryRun: boolean
 } {
-	const args = argv.filter((arg) => arg !== '--no-extension')
-	return { args, noExtension: args.length !== argv.length }
+	const args: string[] = []
+	let noExtension = false
+	let noDryRun = false
+
+	for (const arg of argv) {
+		if (arg === '--no-extension') {
+			noExtension = true
+		} else if (arg === '--no-dry-run') {
+			noDryRun = true
+		} else {
+			args.push(arg)
+		}
+	}
+
+	return { args, noExtension, noDryRun }
 }
 
 function splitPatterns(value: string | undefined): string[] | undefined {

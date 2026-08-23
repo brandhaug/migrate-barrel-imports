@@ -38,6 +38,10 @@ describe('parseCliArgs', (): void => {
 		expect(parseCliArgs(['--dry-run']).dryRun).toBe(true)
 	})
 
+	it('parses --no-dry-run', (): void => {
+		expect(parseCliArgs(['--no-dry-run']).dryRun).toBe(false)
+	})
+
 	it('splits comma-separated ignore patterns', (): void => {
 		const args = parseCliArgs([
 			'--ignore-source-files',
