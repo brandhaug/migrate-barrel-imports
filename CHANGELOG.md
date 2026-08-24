@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/brandhaug/migrate-barrel-imports/compare/v2.0.0...v2.1.0) (2026-08-24)
+
+
+### Features
+
+* **cli:** support non-interactive CLI arguments ([#27](https://github.com/brandhaug/migrate-barrel-imports/issues/27)) ([4fa3fd8](https://github.com/brandhaug/migrate-barrel-imports/commit/4fa3fd8e8a22e1734cc790fd9aab334a9eeb6cdb))
+
 ## [2.1.0](https://github.com/brandhaug/migrate-barrel-imports/compare/v2.0.0...v2.1.0) (2026-08-23)
 
 
