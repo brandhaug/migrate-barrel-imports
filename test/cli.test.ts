@@ -30,6 +30,7 @@ describe('parseCliArgs', (): void => {
 		expect(parseCliArgs(['packages/*', 'apps/web'])).toEqual({
 			sourcePath: 'packages/*',
 			targetPath: 'apps/web',
+			targetGlob: undefined,
 			includeExtension: undefined,
 			includeBarrels: undefined,
 			dryRun: undefined,
@@ -44,6 +45,21 @@ describe('parseCliArgs', (): void => {
 		expect(parseCliArgs([])).toEqual({
 			sourcePath: undefined,
 			targetPath: undefined,
+			targetGlob: undefined,
+			includeExtension: undefined,
+			dryRun: undefined,
+			ignoreSourceFiles: undefined,
+			ignoreTargetFiles: undefined
+		})
+	})
+
+	it('parses --target-glob', (): void => {
+		expect(
+			parseCliArgs(['packages/*', '.', '--target-glob', 'apps/*'])
+		).toEqual({
+			sourcePath: 'packages/*',
+			targetPath: '.',
+			targetGlob: 'apps/*',
 			includeExtension: undefined,
 			includeBarrels: undefined,
 			dryRun: undefined,

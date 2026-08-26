@@ -2,6 +2,7 @@
  * Configuration options for the migration process
  * @property {string} sourcePath - Glob pattern for source packages to migrate
  * @property {string} targetPath - Path to the monorepo root to search for imports
+ * @property {string} [targetGlob] - Glob, relative to targetPath, restricting which target directories are scanned
  * @property {string[]} ignoreSourceFiles - Patterns to ignore when scanning source files
  * @property {string[]} ignoreTargetFiles - Patterns to ignore when scanning target files
  * @property {boolean} [includeExtension] - Whether to include file extensions in imports
@@ -14,6 +15,7 @@ import type { Verbosity } from './logger.js'
 export type Options = {
 	sourcePath: string
 	targetPath: string
+	targetGlob?: string
 	ignoreSourceFiles: string[]
 	ignoreTargetFiles: string[]
 	includeExtension?: boolean

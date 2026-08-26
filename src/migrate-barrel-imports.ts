@@ -119,8 +119,10 @@ interface FindExportsParams {
 interface FindImportsParams {
 	packageName: string
 	targetPath: string
+	targetGlob?: string
 	logger?: Logger
 	ignoreTargetFiles?: string[]
+	sourcePackagePaths?: string[]
 	stats?: MigrationStats
 	parseErrors?: ParseError[]
 	skippedFiles?: string[]
@@ -736,8 +738,10 @@ export async function findExports({
 async function findImports({
 	packageName,
 	targetPath,
+	targetGlob,
 	logger = defaultLogger,
 	ignoreTargetFiles = [],
+	sourcePackagePaths = [],
 	stats,
 	parseErrors,
 	skippedFiles
@@ -745,18 +749,36 @@ async function findImports({
 	try {
 		const allFiles = new Set<string>()
 
-		// Find all TypeScript and JavaScript files in the monorepo
-		const files = await fg(['**/*.{ts,tsx,js,jsx}'], {
-			cwd: targetPath,
-			absolute: true,
-			ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'],
-			followSymbolicLinks: false
-		})
+		// Find all TypeScript and JavaScript files in the scanned directories
+		const scanDirectories = await resolveScanDirectories(
+			targetPath,
+			targetGlob,
+			logger
+		)
+		const files = (
+			await Promise.all(
+				scanDirectories.map((directory) =>
+					fg(['**/*.{ts,tsx,js,jsx}'], {
+						cwd: directory,
+						absolute: true,
+						ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'],
+						followSymbolicLinks: false
+					})
+				)
+			)
+		).flat()
 
-		logger.verbose(`Found ${files.length} files to scan`)
+		const excludedSourcePaths = sourcePackagePaths.filter(
+			(directory) => !containsOrEquals(directory, scanDirectories)
+		)
+		const targetFiles = files.filter(
+			(file) => !isInsideAnyDirectory(file, excludedSourcePaths)
+		)
+
+		logger.verbose(`Found ${targetFiles.length} files to scan`)
 
 		// Scan each file for imports
-		for (const file of files) {
+		for (const file of targetFiles) {
 			// Check if file matches any ignore pattern
 			const relativePath = path.relative(targetPath, file)
 			if (
@@ -816,6 +838,79 @@ async function findImports({
 		logger.error(`Error finding imports: ${formatError(error)}`)
 		return []
 	}
+}
+
+/**
+ * Resolves the directories to scan for imports
+ *
+ * Without a target glob the whole target path is scanned. With one, only the
+ * directories matching the glob (relative to the target path) are scanned.
+ */
+async function resolveScanDirectories(
+	targetPath: string,
+	targetGlob: string | undefined,
+	logger: Logger = defaultLogger
+): Promise<string[]> {
+	if (targetGlob === undefined || targetGlob.trim().length === 0) {
+		return [targetPath]
+	}
+
+	const directories = await fg(targetGlob, {
+		cwd: targetPath,
+		absolute: true,
+		onlyDirectories: true,
+		ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'],
+		followSymbolicLinks: false
+	})
+
+	logger.verbose(
+		`Target glob "${targetGlob}" matched ${directories.length} directories`
+	)
+
+	return directories
+}
+
+/**
+ * Checks whether a directory is, or contains, any of the given scan roots
+ *
+ * A source package the user explicitly pointed the scan at is still a rewrite
+ * target: excluding it would silently drop the directory that was asked for.
+ */
+function containsOrEquals(
+	directory: string,
+	scanDirectories: readonly string[]
+): boolean {
+	const resolvedDirectory = path.resolve(directory)
+
+	return scanDirectories.some((scanDirectory) => {
+		const resolvedScan = path.resolve(scanDirectory)
+		return (
+			resolvedScan === resolvedDirectory ||
+			isInsideAnyDirectory(resolvedScan, [resolvedDirectory])
+		)
+	})
+}
+
+/**
+ * Checks whether a file lives inside any of the given directories
+ *
+ * Source directories are never rewrite targets, so their files are filtered out
+ * before scanning even when the target path contains them.
+ */
+function isInsideAnyDirectory(
+	filePath: string,
+	directories: readonly string[]
+): boolean {
+	const resolvedFile = path.resolve(filePath)
+
+	return directories.some((directory) => {
+		const relative = path.relative(path.resolve(directory), resolvedFile)
+		return (
+			relative.length > 0 &&
+			!relative.startsWith('..') &&
+			!path.isAbsolute(relative)
+		)
+	})
 }
 
 /**
@@ -1109,6 +1204,7 @@ export async function migrateBarrelImports(
 	const {
 		sourcePath,
 		targetPath,
+		targetGlob,
 		ignoreTargetFiles,
 		includeExtension = true,
 		includeBarrels = false,
@@ -1187,8 +1283,10 @@ export async function migrateBarrelImports(
 			const targetFiles = await findImports({
 				packageName,
 				targetPath,
+				targetGlob,
 				logger,
 				ignoreTargetFiles,
+				sourcePackagePaths: sourcePackages,
 				stats,
 				parseErrors,
 				skippedFiles

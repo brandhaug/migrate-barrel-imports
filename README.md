@@ -59,17 +59,22 @@ npx migrate-barrel-imports <source-path> [target-path] [options]
 
 ### Options
 
-| Option                             | Description                                                   | Default       |
-| ---------------------------------- | ------------------------------------------------------------- | ------------- |
-| `--extension` / `--no-extension`   | Include file extensions in rewritten import paths             | `--extension` |
-| `--include-barrels`                | Also rewrite imports and re-exports inside barrel files       | off           |
-| `--ignore-source-files <patterns>` | Comma-separated file patterns to ignore in source directories | _(none)_      |
-| `--ignore-target-files <patterns>` | Comma-separated file patterns to ignore in target directories | _(none)_      |
-| `--dry-run`                        | Preview changes as a diff without modifying files             | off           |
-| `-q`, `--quiet`                    | Print only the migration summary                              | off           |
-| `--verbose`                        | Print per-file progress in addition to the summary            | off           |
-| `--json`                           | Print one machine-readable JSON report to stdout              | off           |
-| `-h`, `--help`                     | Show help                                                     | —             |
+| Option                             | Description                                                                       | Default                       |
+| ---------------------------------- | --------------------------------------------------------------------------------- | ----------------------------- |
+| `--extension` / `--no-extension`   | Include file extensions in rewritten import paths                                 | `--extension`                 |
+| `--include-barrels`                | Also rewrite imports and re-exports inside barrel files                           | off                           |
+| `--target-glob <pattern>`          | Glob, relative to `target-path`, restricting which target directories are scanned | _(scan all of `target-path`)_ |
+| `--ignore-source-files <patterns>` | Comma-separated file patterns to ignore in source directories                     | _(none)_                      |
+| `--ignore-target-files <patterns>` | Comma-separated file patterns to ignore in target directories                     | _(none)_                      |
+| `--dry-run`                        | Preview changes as a diff without modifying files                                 | off                           |
+| `-q`, `--quiet`                    | Print only the migration summary                                                  | off                           |
+| `--verbose`                        | Print per-file progress in addition to the summary                                | off                           |
+| `--json`                           | Print one machine-readable JSON report to stdout                                  | off                           |
+| `-h`, `--help`                     | Show help                                                                         | —                             |
+
+Files inside the source directories are never rewrite targets, so pointing
+`target-path` at a repo root that contains the source packages leaves those
+packages untouched.
 
 By default the CLI prints the migration summary and any warnings. `--verbose`
 adds per-file progress, and `-q` / `--quiet` prints the summary alone. Errors
@@ -183,6 +188,9 @@ migrate-barrel-imports "libs/*" --include-barrels
 
 # Migrate specific packages
 migrate-barrel-imports "packages/{ui,core,utils}" --ignore-target-files "**/*.test.ts"
+
+# Scan only the apps/* directories for imports to rewrite
+migrate-barrel-imports "libs/*" . --target-glob "apps/*"
 
 # Machine-readable report for CI
 migrate-barrel-imports "libs/*" . --json --dry-run > report.json

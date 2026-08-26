@@ -333,8 +333,8 @@ export const loadConfig = (config: Config): void => {
 		}
 	)
 
-	// Test case for migrating barrel imports within source package when inside target
-	it('should migrate barrel imports within source package when inside target directory', async () => {
+	// Test case for leaving the source package untouched when it lives inside the target
+	it('should leave source package files untouched when the source dir is inside the target directory', async () => {
 		const monorepoDir = path.join(
 			process.env.RUNNER_TEMP || os.tmpdir(),
 			`test-source-in-target-${randomUUID()}`
@@ -425,12 +425,9 @@ export const App = () => {
 			'utf-8'
 		)
 
-		// Check internal file imports
+		// Source package files are never rewrite targets
 		expect(cleanOutput(formContent)).toContain(
-			'import { Button } from "@test/source-lib/src/components/Button.tsx"'
-		)
-		expect(cleanOutput(formContent)).toContain(
-			'import { Input } from "@test/source-lib/src/components/Input.tsx"'
+			'import { Button, Input } from "@test/source-lib"'
 		)
 
 		// Check external file imports
@@ -2020,6 +2017,133 @@ export { add } from "@test/source-lib";
 
 		expect(result.skippedFiles).toContain(barrelFilePath)
 		expect(result.stats.targetFilesSkipped).toBeGreaterThan(0)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+})
+
+describe.concurrent('target scan scope', (): void => {
+	const sourceExports = {
+		'src/utils.ts':
+			'export const add = (a: number, b: number): number => a + b;\n',
+		'src/index.ts': 'export * from "./utils";\n'
+	}
+
+	it('never treats files under the source directories as rewrite targets', async () => {
+		const { monorepoDir, sourceDir, targetDir } = createTestSetup(
+			'source-dirs-excluded'
+		)
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, sourceExports)
+
+		const selfImportPath = 'src/internal.ts'
+		const selfImportContent =
+			'import { add } from "@test/source-lib";\n\nexport const double = (a: number): number => add(a, a);\n'
+		fs.writeFileSync(path.join(sourceDir, selfImportPath), selfImportContent)
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/app.ts'),
+			'import { add } from "@test/source-lib";\n\nexport const sum = add(1, 2);\n'
+		)
+
+		await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		expect(fs.readFileSync(path.join(sourceDir, selfImportPath), 'utf-8')).toBe(
+			selfImportContent
+		)
+		expect(
+			cleanOutput(fs.readFileSync(path.join(targetDir, 'src/app.ts'), 'utf-8'))
+		).toContain('import { add } from "@test/source-lib/src/utils.ts"')
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('still rewrites a source package that is itself the target path', async () => {
+		const monorepoDir = path.join(
+			process.env.RUNNER_TEMP || os.tmpdir(),
+			`test-target-is-source-${randomUUID()}`
+		)
+		const packagesDir = path.join(monorepoDir, 'packages')
+		const libDir = path.join(packagesDir, 'source-lib')
+		const consumerDir = path.join(packagesDir, 'consumer-lib')
+
+		fs.mkdirSync(path.join(libDir, 'src'), { recursive: true })
+		fs.mkdirSync(path.join(consumerDir, 'src'), { recursive: true })
+
+		createPackageJson(libDir, '@test/source-lib')
+		createSourceFiles(libDir, sourceExports)
+
+		// consumer-lib is matched by the source glob, but it is also the
+		// directory the user pointed the scan at, so it stays a rewrite target
+		createPackageJson(consumerDir, '@test/consumer-lib', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(consumerDir, 'src/consumer.ts'),
+			'import { add } from "@test/source-lib";\n\nexport const sum = add(1, 2);\n'
+		)
+
+		await runMigrateBarrelImports({
+			sourcePath: packagesDir,
+			targetPath: consumerDir,
+			includeExtension: true
+		})
+
+		expect(
+			cleanOutput(
+				fs.readFileSync(path.join(consumerDir, 'src/consumer.ts'), 'utf-8')
+			)
+		).toContain('import { add } from "@test/source-lib/src/utils.ts"')
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('restricts scanning to directories matching --target-glob', async () => {
+		const monorepoDir = path.join(
+			process.env.RUNNER_TEMP || os.tmpdir(),
+			`test-target-glob-${randomUUID()}`
+		)
+		const sourceDir = path.join(monorepoDir, 'packages/source-lib')
+		const appDir = path.join(monorepoDir, 'apps/web')
+		const unrelatedDir = path.join(monorepoDir, 'libs/conf')
+
+		fs.mkdirSync(path.join(appDir, 'src'), { recursive: true })
+		fs.mkdirSync(path.join(unrelatedDir, 'src'), { recursive: true })
+		fs.mkdirSync(path.join(sourceDir, 'src'), { recursive: true })
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, sourceExports)
+
+		const importerContent =
+			'import { add } from "@test/source-lib";\n\nexport const sum = add(1, 2);\n'
+		createPackageJson(appDir, '@test/web', { '@test/source-lib': '1.0.0' })
+		fs.writeFileSync(path.join(appDir, 'src/app.ts'), importerContent)
+		createPackageJson(unrelatedDir, '@test/conf', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(path.join(unrelatedDir, 'src/conf.ts'), importerContent)
+
+		await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			targetGlob: 'apps/*',
+			includeExtension: true
+		})
+
+		expect(
+			cleanOutput(fs.readFileSync(path.join(appDir, 'src/app.ts'), 'utf-8'))
+		).toContain('import { add } from "@test/source-lib/src/utils.ts"')
+		expect(
+			fs.readFileSync(path.join(unrelatedDir, 'src/conf.ts'), 'utf-8')
+		).toBe(importerContent)
 
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
 	})

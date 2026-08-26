@@ -14,8 +14,9 @@ export type CliArgs = Partial<Omit<Options, 'targetPath'>> & {
  *
  * Supports two positionals (`source-path` and optional `target-path`) plus flags:
  * `--extension` / `--no-extension`, `--include-barrels` / `--no-include-barrels`,
- * `--ignore-source-files <patterns>`, `--ignore-target-files <patterns>`, `--dry-run`,
- * `--quiet` / `--verbose`, `--json`.
+ * `--target-glob <pattern>`, `--ignore-source-files <patterns>`,
+ * `--ignore-target-files <patterns>`, `--dry-run`, `--quiet` / `--verbose`,
+ * `--json`.
  */
 export function parseCliArgs(argv: readonly string[]): CliArgs {
 	const {
@@ -39,6 +40,11 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
 				default: undefined,
 				description:
 					'Also rewrite imports inside barrel files (index files of re-exports)'
+			},
+			'target-glob': {
+				type: 'string',
+				description:
+					'Glob, relative to target-path, restricting which target directories are scanned'
 			},
 			'ignore-source-files': {
 				type: 'string',
@@ -87,6 +93,7 @@ Options:
   --extension / --no-extension     Include file extensions in imports
   --include-barrels / --no-include-barrels
                                    Also rewrite imports inside barrel files (skipped by default)
+  --target-glob <pattern>          Glob (relative to target-path) restricting which target directories are scanned
   --ignore-source-files <patterns> Comma-separated patterns to ignore in source dirs
   --ignore-target-files <patterns> Comma-separated patterns to ignore in target dirs
   --dry-run / --no-dry-run       Preview changes without modifying files
@@ -100,6 +107,7 @@ Options:
 	return {
 		sourcePath: positionals[0],
 		targetPath: positionals[1],
+		targetGlob: values['target-glob'],
 		includeExtension: values.extension ?? (noExtension ? false : undefined),
 		includeBarrels:
 			values['include-barrels'] ?? (noIncludeBarrels ? false : undefined),
@@ -303,6 +311,7 @@ export async function main(
 	await migrateBarrelImports({
 		sourcePath,
 		targetPath,
+		targetGlob: args.targetGlob,
 		ignoreSourceFiles: resolveIgnoreSourceFiles(args.ignoreSourceFiles),
 		ignoreTargetFiles: resolveIgnoreTargetFiles(args.ignoreTargetFiles),
 		includeExtension,
