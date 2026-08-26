@@ -92,6 +92,7 @@ describe('index', (): void => {
 			ignoreSourceFiles: [],
 			ignoreTargetFiles: [],
 			includeExtension: false,
+			includeBarrels: false,
 			dryRun: true,
 			verbosity: 'normal'
 		}
@@ -123,6 +124,7 @@ describe('index', (): void => {
 			ignoreSourceFiles: ['**/*.test.ts', '**/node_modules/**'],
 			ignoreTargetFiles: ['**/*.spec.ts', '**/dist/**'],
 			includeExtension: false,
+			includeBarrels: false,
 			dryRun: true,
 			verbosity: 'normal'
 		}
@@ -143,6 +145,7 @@ describe('index', (): void => {
 			ignoreSourceFiles: [],
 			ignoreTargetFiles: [],
 			includeExtension: true,
+			includeBarrels: false,
 			dryRun: false,
 			verbosity: 'normal'
 		}

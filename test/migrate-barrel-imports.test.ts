@@ -1745,4 +1745,114 @@ describe.concurrent('output verbosity', (): void => {
 		expect(output).not.toContain('Skipping')
 		expect(output).toContain('Files that could not be parsed: 1')
 	})
+	// Barrel files as rewrite targets
+	const barrelSourceExports: Record<string, string> = {
+		'src/utils.ts': `
+export const add = (a: number, b: number): number => a + b;
+`,
+		'src/constants.ts': `
+export const PI = 3.14159;
+`,
+		'src/index.ts': `
+export * from "./utils";
+export * from "./constants";
+`
+	}
+
+	const barrelTargetContent = `
+export * from "./client";
+export { add, PI } from "@test/source-lib";
+`
+
+	const setupBarrelTarget = (
+		testName: string
+	): { monorepoDir: string; sourceDir: string; barrelPath: string } => {
+		const { monorepoDir, sourceDir, targetDir } = createTestSetup(testName)
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, barrelSourceExports)
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/client.ts'),
+			'export const client = 1;\n'
+		)
+		const barrelPath = path.join(targetDir, 'src/index.ts')
+		fs.writeFileSync(barrelPath, barrelTargetContent)
+
+		return { monorepoDir, sourceDir, barrelPath }
+	}
+
+	it('should rewrite re-exports in a barrel target file when includeBarrels is enabled', async () => {
+		const { monorepoDir, sourceDir, barrelPath } = setupBarrelTarget(
+			'barrel-target-included'
+		)
+
+		await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true,
+			includeBarrels: true
+		})
+
+		const cleanedContent = cleanOutput(fs.readFileSync(barrelPath, 'utf-8'))
+
+		expect(cleanedContent).toContain(
+			'export { add } from "@test/source-lib/src/utils.ts"'
+		)
+		expect(cleanedContent).toContain(
+			'export { PI } from "@test/source-lib/src/constants.ts"'
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('should leave re-exports in a barrel target file untouched by default', async () => {
+		const { monorepoDir, sourceDir, barrelPath } = setupBarrelTarget(
+			'barrel-target-skipped'
+		)
+
+		await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		expect(fs.readFileSync(barrelPath, 'utf-8')).toBe(barrelTargetContent)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('should count skipped barrel files in the stats and report them when verbose', async () => {
+		const { monorepoDir, sourceDir, barrelPath } = setupBarrelTarget(
+			'barrel-target-stats'
+		)
+
+		const lines: string[] = []
+		const result = await migrateBarrelImports(
+			{
+				...defaultOptions,
+				sourcePath: sourceDir,
+				targetPath: monorepoDir,
+				includeExtension: true,
+				verbosity: 'verbose'
+			},
+			createLogger({
+				verbosity: 'verbose',
+				write: (line: string): void => {
+					lines.push(line)
+				}
+			})
+		)
+
+		expect(result.stats.targetFilesSkipped).toBe(1)
+		expect(result.stats.targetFilesProcessed).toBe(0)
+		expect(lines.join('\n')).toContain(
+			`Skipping barrel file (use --include-barrels to rewrite it): ${barrelPath}`
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
 })
