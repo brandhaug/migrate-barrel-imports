@@ -1,41 +1,31 @@
 # AGENTS.md
 
-## Project Overview
+`migrate-barrel-imports` — CLI that rewrites barrel imports (`index.ts` re-exports) to direct module imports in JS/TS monorepos. TypeScript (ES2020, ESM). Babel for AST, Commander for CLI, fast-glob for matching.
 
-`migrate-barrel-imports` is a CLI tool that rewrites barrel imports (`index.ts` re-exports) to direct module imports in JavaScript/TypeScript monorepos. Built with Babel for AST parsing/transformation, Commander for CLI, and fast-glob for file matching.
+## Tooling
 
-- **Language:** TypeScript (ES2020, ESM)
-- **Package manager:** npm (no lockfile, exact versions pinned)
-- **Node requirement:** >= 20
+- **Bun** (>= 1.4.0) — package manager + test runner (`packageManager: "bun@1.4.0"`, engines `bun >= 1.4.0`). No npm lockfile; use `bun.lock`.
+- Source in `src/`, tests in `test/` (mirror their source file, e.g. `test/cli.test.ts`).
 
-## Setup Commands
+## Setup
 
 ```bash
-npm install
-npm run prepare   # configures git hooks
+bun install
+npm run prepare   # sets core.hooksPath to .githooks
 ```
 
-## Development Workflow
+## Local dev
 
-- Source code lives in `src/`, tests in `test/`
-- Build with `npm run build` (runs `tsc`, outputs to `dist/`)
-- Run the CLI locally: `npm start` or `node dist/index.js`
+- Build: `npm run build` (`tsc` → `dist/`)
+- Run CLI: `npm start` or `node dist/index.js`
+- Test: `bun test` (CI uses `npm run test` = `bun test --isolate`)
+- Lint: `npm run lint`; format: `npm run format`
+- Full check: `npm run validate` (lint + format:check + test)
+- Pre-commit hook (`.githooks/pre-commit`): `npx oxfmt --write && npx oxlint --fix --type-aware`
 
-## Testing
+## Commit & Release
 
-- Framework: Vitest
-- Run tests: `npm test`
-- Run tests in CI mode: `CI=test npm run test`
-- Test files mirror source files: `test/<name>.test.ts`
-- Always add tests for new functionality in `test/migrate-barrel-imports.test.ts`
-
-## Commit & Release Conventions
-
-- **All commits and PR titles must follow [Conventional Commits](https://www.conventionalcommits.org/)**: `type(scope): subject`, where `type` is one of `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `revert`. Use `!` or a `BREAKING CHANGE:` footer for breaking changes.
-- This convention is enforced by the **PR Gate** workflow (`.github/workflows/pr-gate.yml`), which fails any PR whose title does not conform.
-- Releases are automated by [release-please](https://github.com/googleapis/release-please-action): merging Conventional Commits to `master` opens a release PR titled `chore(master): release ...`; merging it tags and publishes the release.
-- `CLAUDE.md` is a symlink to this file so Claude Code reads the same conventions.
-
-## Pull Request Guidelines
-
-- Target branch: `master`
+- Conventional Commits enforced by **PR Gate** (`.github/workflows/pr-gate.yml`): `type(scope): subject` with types `feat fix chore docs style refactor perf test build ci revert`; breaking changes use `!` or `BREAKING CHANGE:` footer.
+- [release-please](https://github.com/googleapis/release-please-action) on `master` opens a release PR titled `chore(master): release ...`; merging it tags and publishes to npm.
+- PR target branch: `master`.
+- `CLAUDE.md` is a symlink to this file.
