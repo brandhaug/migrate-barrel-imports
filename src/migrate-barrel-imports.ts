@@ -60,7 +60,6 @@ const generate: typeof _generate = _generate.default || _generate
 const traverse: typeof _traverse = _traverse.default || _traverse
 
 /**
-/**
  * @property {string} source - Source file path containing exports
  * @property {string[]} exports - Array of exported names from the file
  * @property {boolean} [isIgnored] - Whether the file is ignored
@@ -206,6 +205,17 @@ const defaultLogger: Logger = createLogger({ verbosity: 'normal' })
 /** Renders an unknown thrown value as a log-friendly string. */
 function formatError(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * True when a module source names the package itself or a subpath of it.
+ *
+ * A bare prefix match would also match sibling packages (`@scope/foo2`,
+ * `@scope/foo-bar`), so the boundary check requires either an exact match or a
+ * `/` after the package name.
+ */
+function isPackageImport(source: string, packageName: string): boolean {
+	return source === packageName || source.startsWith(`${packageName}/`)
 }
 
 /**
@@ -815,7 +825,7 @@ async function findImports({
 				const ast = parse(content, getBabelConfig(file))
 
 				const matchesPackage = (source: string): boolean =>
-					source === packageName || source.startsWith(`${packageName}/`)
+					isPackageImport(source, packageName)
 
 				traverse(ast, {
 					ImportDeclaration(path: NodePath<ImportDeclaration>) {
@@ -846,7 +856,7 @@ async function findImports({
 					micromatch.isMatch(relativePath, pattern)
 				)
 			) {
-				console.log(`File matches ignore pattern, skipping: ${relativePath}`)
+				logger.verbose(`File matches ignore pattern, skipping: ${relativePath}`)
 				allFiles.delete(file)
 				skipped.push(file)
 			}
@@ -960,7 +970,7 @@ async function updateImports({
 		traverse(ast, {
 			ImportDeclaration(path: NodePath<ImportDeclaration>) {
 				const importSource = path.node.source.value
-				if (importSource.startsWith(packageName)) {
+				if (isPackageImport(importSource, packageName)) {
 					importDeclarations.push(path.node)
 				}
 			}
@@ -1036,7 +1046,7 @@ async function updateImports({
 		traverse(ast, {
 			ImportDeclaration(path: NodePath<ImportDeclaration>) {
 				const importSource = path.node.source.value
-				if (importSource.startsWith(packageName)) {
+				if (isPackageImport(importSource, packageName)) {
 					// Remove the original import declaration
 					path.remove()
 				}
@@ -1077,7 +1087,7 @@ async function updateImports({
 		traverse(ast, {
 			ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
 				const source = path.node.source
-				if (source?.value.startsWith(packageName)) {
+				if (source && isPackageImport(source.value, packageName)) {
 					reExportPaths.push(path)
 				}
 			}
@@ -1238,6 +1248,7 @@ export async function migrateBarrelImports(
 	const candidateFiles = new Set<string>()
 	const skippedFiles = new Set<string>()
 	const examinedFiles = new Set<string>()
+	const failedFiles = new Set<string>()
 	const updatedFiles = new Set<string>()
 
 	// Track warnings
@@ -1322,6 +1333,7 @@ export async function migrateBarrelImports(
 					logger.verbose(
 						`Skipping barrel file (use --include-barrels to rewrite it): ${filePath}`
 					)
+					candidateFiles.delete(filePath)
 					skippedFiles.add(filePath)
 					continue
 				}
@@ -1339,6 +1351,7 @@ export async function migrateBarrelImports(
 				stats.importsMigrated += result.importsMigrated
 
 				if (result.status === 'failed') {
+					failedFiles.add(filePath)
 					continue
 				}
 
@@ -1356,13 +1369,15 @@ export async function migrateBarrelImports(
 			warnings.push(`Skipped ${filePath}: failed to parse: ${message}`)
 		}
 
-		// Derive the target file counters so they cannot contradict each other
+		// Derive the target file counters so they cannot contradict each other.
+		// Skipped candidates (by ignore pattern or barrel detection) are removed
+		// from the found count, so found = processed + failed.
 		stats.targetFilesFound = candidateFiles.size
 		stats.targetFilesSkipped = skippedFiles.size
 		stats.targetFilesProcessed = examinedFiles.size
 		stats.importsUpdated = updatedFiles.size
 		stats.noChangesNeeded = examinedFiles.size - updatedFiles.size
-		stats.targetFilesFailed = candidateFiles.size - examinedFiles.size
+		stats.targetFilesFailed = failedFiles.size
 
 		// Print migration summary
 		logger.summary('\nMigration Summary')
@@ -1388,13 +1403,6 @@ export async function migrateBarrelImports(
 		logger.summary(`Target files failed: ${stats.targetFilesFailed}`)
 		logger.summary(`Total imports migrated: ${stats.importsMigrated}`)
 		logger.summary(`Files that could not be parsed: ${parseErrors.length}`)
-
-		if (parseErrors.length > 0) {
-			logger.summary('Unparseable files:')
-			parseErrors.forEach(({ filePath, message }) =>
-				logger.summary(`  - ${filePath}: ${message}`)
-			)
-		}
 
 		if (parseErrors.length > 0) {
 			logger.summary('Unparseable files:')
