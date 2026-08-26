@@ -384,9 +384,7 @@ async function findExports({
 	// First pass: identify barrel files
 	for (const file of allFiles) {
 		const fullPath = path.join(packagePath, file)
-		if (
-			await isBarrelFile({ filePath: fullPath, packagePath }, parseErrors)
-		) {
+		if (await isBarrelFile({ filePath: fullPath, packagePath }, parseErrors)) {
 			barrelFiles.add(file)
 			console.log(`Identified barrel file: ${file}`)
 		}
