@@ -2000,6 +2000,61 @@ export const twice = add(2, 2);
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
 	})
 
+	it('lists a file updated for two source packages once in changedFiles', async () => {
+		const monorepoDir = path.join(
+			process.env.RUNNER_TEMP || os.tmpdir(),
+			`test-result-dedupe-${randomUUID()}`
+		)
+		const sourceDir = path.join(monorepoDir, 'packages/source-lib')
+		const secondSourceDir = path.join(monorepoDir, 'packages/second-lib')
+		const targetDir = path.join(monorepoDir, 'apps/target-app')
+
+		for (const dir of [sourceDir, secondSourceDir, targetDir]) {
+			fs.mkdirSync(path.join(dir, 'src'), { recursive: true })
+		}
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/utils.ts':
+				'export const add = (a: number, b: number): number => a + b;\n',
+			'src/index.ts': 'export * from "./utils";\n'
+		})
+
+		createPackageJson(secondSourceDir, '@test/second-lib')
+		createSourceFiles(secondSourceDir, {
+			'src/helpers.ts': 'export const double = (n: number): number => n * 2;\n',
+			'src/index.ts': 'export * from "./helpers";\n'
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0',
+			'@test/second-lib': '1.0.0'
+		})
+		const sharedFilePath = path.join(targetDir, 'src/shared.ts')
+		fs.writeFileSync(
+			sharedFilePath,
+			`
+import { add } from "@test/source-lib";
+import { double } from "@test/second-lib";
+
+export const sum = add(1, 2);
+export const quadrupled = double(sum);
+`
+		)
+
+		const result = await runMigrateBarrelImports({
+			sourcePath: path.join(monorepoDir, 'packages'),
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		expect(new Set(result.changedFiles).size).toBe(result.changedFiles.length)
+		expect(result.changedFiles).toEqual([sharedFilePath])
+		expect(result.stats.importsUpdated).toBe(result.changedFiles.length)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
 	it('lists barrel target files skipped by default', async () => {
 		const { monorepoDir, sourceDir, targetDir } =
 			createResultFixture('result-barrel-skip')
