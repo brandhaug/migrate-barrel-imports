@@ -118,7 +118,7 @@ interface ExportInfo {
 	exportFiles?: Record<string, string[]>
 }
 
-interface MigrationStats {
+export interface MigrationStats {
 	sourcePackagesFound: number
 	sourcePackagesProcessed: number
 	sourcePackagesSkipped: number
@@ -148,6 +148,7 @@ interface FindExportsParams {
 	packagePath: string
 	ignoreSourceFiles?: string[]
 	stats?: MigrationStats
+	parseErrors?: ParseError[]
 }
 
 interface FindImportsParams {
@@ -155,6 +156,27 @@ interface FindImportsParams {
 	targetPath: string
 	ignoreTargetFiles?: string[]
 	stats?: MigrationStats
+	parseErrors?: ParseError[]
+}
+
+/**
+ * A file that could not be parsed during the migration
+ *
+ * @property {string} filePath - Absolute path to the file that failed to parse
+ * @property {string} message - The parser error message
+ */
+export interface ParseError {
+	filePath: string
+	message: string
+}
+
+/**
+ * The outcome of a migration run
+ */
+export interface MigrationResult {
+	stats: MigrationStats
+	warnings: string[]
+	parseErrors: ParseError[]
 }
 
 interface ImportSpec {
@@ -170,6 +192,29 @@ interface UpdateImportsParams {
 	dryRun?: boolean
 	warnings?: string[]
 	stats?: MigrationStats
+	parseErrors?: ParseError[]
+}
+
+/**
+ * Records a file that could not be parsed so the migration can skip it and carry on
+ */
+function recordParseError({
+	filePath,
+	error,
+	parseErrors
+}: {
+	filePath: string
+	error: unknown
+	parseErrors?: ParseError[]
+}): void {
+	const message = error instanceof Error ? error.message : String(error)
+	console.error(`Skipping ${filePath}: failed to parse: ${message}`)
+
+	if (parseErrors?.some((parseError) => parseError.filePath === filePath)) {
+		return
+	}
+
+	parseErrors?.push({ filePath, message })
 }
 
 /**
@@ -257,10 +302,10 @@ function isEntryPointFileName(filePath: string): boolean {
  * @param {IsBarrelFileParams} params - Parameters for the check
  * @returns {Promise<boolean>} Whether the file is a barrel file
  */
-export async function isBarrelFile({
-	filePath,
-	packagePath
-}: IsBarrelFileParams): Promise<boolean> {
+export async function isBarrelFile(
+	{ filePath, packagePath }: IsBarrelFileParams,
+	parseErrors?: ParseError[]
+): Promise<boolean> {
 	try {
 		const content = await readFile(filePath, 'utf-8')
 		const ast = parse(content, getBabelConfig(filePath))
@@ -297,7 +342,7 @@ export async function isBarrelFile({
 		const total = reExportCount + otherStatementCount
 		return reExportCount / total >= PURE_RE_EXPORT_RATIO
 	} catch (error) {
-		console.error(`Error checking if ${filePath} is a barrel file:`, error)
+		recordParseError({ filePath, error, parseErrors })
 		return false
 	}
 }
@@ -318,7 +363,8 @@ export async function isBarrelFile({
 async function findExports({
 	packagePath,
 	ignoreSourceFiles = [],
-	stats
+	stats,
+	parseErrors
 }: FindExportsParams): Promise<ExportInfo[]> {
 	const exports: ExportInfo[] = []
 	const barrelFiles = new Set<string>()
@@ -338,7 +384,9 @@ async function findExports({
 	// First pass: identify barrel files
 	for (const file of allFiles) {
 		const fullPath = path.join(packagePath, file)
-		if (await isBarrelFile({ filePath: fullPath, packagePath })) {
+		if (
+			await isBarrelFile({ filePath: fullPath, packagePath }, parseErrors)
+		) {
 			barrelFiles.add(file)
 			console.log(`Identified barrel file: ${file}`)
 		}
@@ -359,9 +407,9 @@ async function findExports({
 
 		const fullPath = path.join(packagePath, file)
 		console.log(`\nProcessing file: ${file}`)
-		const content = await readFile(fullPath, 'utf-8')
 
 		try {
+			const content = await readFile(fullPath, 'utf-8')
 			const ast = parse(content, getBabelConfig(fullPath))
 			const fileExports: string[] = []
 			const reExports: Record<string, string> = {}
@@ -499,7 +547,7 @@ async function findExports({
 				}
 			}
 		} catch (error) {
-			console.error(`Error parsing ${file}:`, error)
+			recordParseError({ filePath: fullPath, error, parseErrors })
 		}
 	}
 
@@ -525,7 +573,8 @@ async function findImports({
 	packageName,
 	targetPath,
 	ignoreTargetFiles = [],
-	stats
+	stats,
+	parseErrors
 }: FindImportsParams): Promise<string[]> {
 	try {
 		const allFiles = new Set<string>()
@@ -572,7 +621,7 @@ async function findImports({
 					}
 				})
 			} catch (error) {
-				console.error(`Error processing file ${file}:`, error)
+				recordParseError({ filePath: file, error, parseErrors })
 			}
 		}
 
@@ -616,13 +665,14 @@ async function updateImports({
 	includeExtension = true,
 	dryRun = false,
 	warnings,
-	stats
+	stats,
+	parseErrors
 }: UpdateImportsParams): Promise<void> {
 	console.log(`\nProcessing file: ${filePath}`)
-	const content = await readFile(filePath, 'utf-8')
 	let modified = false
 
 	try {
+		const content = await readFile(filePath, 'utf-8')
 		const ast = parse(content, getBabelConfig(filePath))
 		const importDeclarations: ImportDeclaration[] = []
 
@@ -857,7 +907,7 @@ async function updateImports({
 			stats.noChangesNeeded++
 		}
 	} catch (error) {
-		console.error(`Error updating imports in ${filePath}:`, error)
+		recordParseError({ filePath, error, parseErrors })
 	}
 }
 
@@ -877,7 +927,7 @@ async function updateImports({
  */
 export async function migrateBarrelImports(
 	options: MigrationOptions
-): Promise<void> {
+): Promise<MigrationResult> {
 	const {
 		sourcePath,
 		targetPath,
@@ -906,6 +956,9 @@ export async function migrateBarrelImports(
 	// Track warnings
 	const warnings: string[] = []
 
+	// Track files that could not be parsed
+	const parseErrors: ParseError[] = []
+
 	if (dryRun) {
 		console.log('[dry-run] Running in dry-run mode, no files will be modified')
 	}
@@ -918,8 +971,23 @@ export async function migrateBarrelImports(
 		for (const packagePath of sourcePackages) {
 			console.log(`\nProcessing package: ${packagePath}`)
 
+			// Read the package name first, so an unreadable package.json only skips
+			// this package instead of aborting the whole migration
+			let packageName: string
+			try {
+				packageName = await getPackageName(packagePath)
+			} catch (error) {
+				recordParseError({
+					filePath: path.join(packagePath, 'package.json'),
+					error,
+					parseErrors
+				})
+				stats.sourcePackagesSkipped++
+				continue
+			}
+
 			// Find exports in source package
-			const exports = await findExports({ packagePath, stats })
+			const exports = await findExports({ packagePath, stats, parseErrors })
 			stats.exportsFound = exports.reduce(
 				(total, info) => total + info.exports.length,
 				0
@@ -927,12 +995,12 @@ export async function migrateBarrelImports(
 			stats.sourceFilesWithExports = exports.length
 
 			// Find files that import from this package
-			const packageName = await getPackageName(packagePath)
 			const targetFiles = await findImports({
 				packageName,
 				targetPath,
 				ignoreTargetFiles,
-				stats
+				stats,
+				parseErrors
 			})
 			stats.targetFilesFound = targetFiles.length
 
@@ -946,11 +1014,17 @@ export async function migrateBarrelImports(
 					includeExtension,
 					dryRun,
 					warnings,
-					stats
+					stats,
+					parseErrors
 				})
 			}
 
 			stats.sourcePackagesProcessed++
+		}
+
+		// Surface every unparseable file as a warning
+		for (const { filePath, message } of parseErrors) {
+			warnings.push(`Skipped ${filePath}: failed to parse: ${message}`)
 		}
 
 		// Print migration summary
@@ -971,11 +1045,21 @@ export async function migrateBarrelImports(
 		console.log(`Target files with no changes needed: ${stats.noChangesNeeded}`)
 		console.log(`Target files skipped: ${stats.targetFilesSkipped}`)
 		console.log(`Total imports migrated: ${stats.importsMigrated}`)
+		console.log(`Files that could not be parsed: ${parseErrors.length}`)
+
+		if (parseErrors.length > 0) {
+			console.log('Unparseable files:')
+			parseErrors.forEach(({ filePath, message }) =>
+				console.log(`  - ${filePath}: ${message}`)
+			)
+		}
 
 		if (warnings.length > 0) {
 			console.log('\nWarnings:')
 			warnings.forEach((warning) => console.log(`  - ${warning}`))
 		}
+
+		return { stats, warnings, parseErrors }
 	} catch (error) {
 		console.error('Error during migration:', error)
 		throw error
