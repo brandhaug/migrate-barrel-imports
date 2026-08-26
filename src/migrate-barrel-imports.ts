@@ -424,6 +424,7 @@ function recordExportFile(
 	const files = exportFiles[name] ?? (exportFiles[name] = [])
 	if (!files.includes(file)) {
 		files.push(file)
+		files.sort()
 	}
 }
 
