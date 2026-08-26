@@ -763,4 +763,136 @@ export const App = () => {
 			})
 		}
 	)
+
+	it('should migrate imports from a .ts file containing generic arrow functions', async () => {
+		const { monorepoDir, sourceDir, targetDir } = createTestSetup('ts-generics')
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/generics.ts': `
+export const identity = <T>(value: T): T => value;
+`,
+			'src/index.ts': `
+export * from "./generics";
+`
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/consumer.ts'),
+			`
+import { identity } from "@test/source-lib";
+
+export const echo = (value: string): string => identity(value);
+`
+		)
+
+		await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		const updatedContent = fs.readFileSync(
+			path.join(targetDir, 'src/consumer.ts'),
+			'utf-8'
+		)
+
+		expect(cleanOutput(updatedContent)).toContain(
+			'import { identity } from "@test/source-lib/src/generics.ts"'
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('should migrate imports from a .tsx file containing JSX', async () => {
+		const { monorepoDir, sourceDir, targetDir } = createTestSetup('tsx-jsx')
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/badge.tsx': `
+export const Badge = ({ label }: { label: string }) => <span>{label}</span>;
+`,
+			'src/index.ts': `
+export * from "./badge";
+`
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/view.tsx'),
+			`
+import { Badge } from "@test/source-lib";
+
+export const View = () => <Badge label="hi" />;
+`
+		)
+
+		await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		const updatedContent = fs.readFileSync(
+			path.join(targetDir, 'src/view.tsx'),
+			'utf-8'
+		)
+
+		expect(cleanOutput(updatedContent)).toContain(
+			'import { Badge } from "@test/source-lib/src/badge.tsx"'
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('should rewrite imports in a target .ts file containing generic arrow functions', async () => {
+		const { monorepoDir, sourceDir, targetDir } =
+			createTestSetup('ts-generics-target')
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/utils.ts': `
+export const add = (a: number, b: number): number => a + b;
+`,
+			'src/index.ts': `
+export * from "./utils";
+`
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/generic-consumer.ts'),
+			`
+import { add } from "@test/source-lib";
+
+export const first = <T>(values: T[]): T | undefined => values[0];
+
+export const sum = (a: number, b: number): number => add(a, b);
+`
+		)
+
+		await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		const updatedContent = fs.readFileSync(
+			path.join(targetDir, 'src/generic-consumer.ts'),
+			'utf-8'
+		)
+
+		expect(cleanOutput(updatedContent)).toContain(
+			'import { add } from "@test/source-lib/src/utils.ts"'
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
 })

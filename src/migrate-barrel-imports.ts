@@ -59,7 +59,6 @@ const BABEL_CONFIG: ParserOptions = {
 	sourceType: 'module',
 	plugins: [
 		'typescript',
-		'jsx',
 		'decorators-legacy',
 		'exportDefaultFrom',
 		'functionBind',
@@ -70,6 +69,29 @@ const BABEL_CONFIG: ParserOptions = {
 		'partialApplication',
 		'throwExpressions'
 	]
+}
+
+// Extensions where `<` starts JSX rather than a type parameter list. Enabling
+// the jsx plugin for plain .ts files breaks generic arrow functions such as
+// `<T>(value: T) => value`.
+const JSX_EXTENSIONS = new Set(['.jsx', '.tsx'])
+
+/**
+ * Builds the Babel parser options for a file, enabling the jsx plugin only for
+ * .jsx/.tsx files.
+ *
+ * @param {string} filePath - Path of the file being parsed
+ * @returns {ParserOptions} Parser options for that file
+ */
+function getBabelConfig(filePath: string): ParserOptions {
+	if (!JSX_EXTENSIONS.has(path.extname(filePath))) {
+		return BABEL_CONFIG
+	}
+
+	return {
+		...BABEL_CONFIG,
+		plugins: [...(BABEL_CONFIG.plugins ?? []), 'jsx']
+	}
 }
 
 /**
@@ -183,7 +205,7 @@ function getExportNames(
 async function isBarrelFile(filePath: string): Promise<boolean> {
 	try {
 		const content = await readFile(filePath, 'utf-8')
-		const ast = parse(content, BABEL_CONFIG)
+		const ast = parse(content, getBabelConfig(filePath))
 		let hasReExports = false
 
 		traverse(ast, {
@@ -262,7 +284,7 @@ async function findExports({
 		const content = await readFile(fullPath, 'utf-8')
 
 		try {
-			const ast = parse(content, BABEL_CONFIG)
+			const ast = parse(content, getBabelConfig(fullPath))
 			const fileExports: string[] = []
 			const reExports: Record<string, string> = {}
 			const fileExportSources: Record<string, string> = {}
@@ -457,7 +479,7 @@ async function findImports({
 
 			try {
 				const content = await readFile(file, 'utf-8')
-				const ast = parse(content, BABEL_CONFIG)
+				const ast = parse(content, getBabelConfig(file))
 
 				traverse(ast, {
 					ImportDeclaration(path: NodePath<ImportDeclaration>) {
@@ -523,7 +545,7 @@ async function updateImports({
 	let modified = false
 
 	try {
-		const ast = parse(content, BABEL_CONFIG)
+		const ast = parse(content, getBabelConfig(filePath))
 		const importDeclarations: ImportDeclaration[] = []
 
 		// First pass: collect all import declarations
