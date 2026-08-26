@@ -8,7 +8,7 @@
  */
 export type Verbosity = 'silent' | 'quiet' | 'normal' | 'verbose'
 
-export type Logger = {
+export interface Logger {
 	verbose: (message: string) => void
 	info: (message: string) => void
 	warn: (message: string) => void
@@ -16,7 +16,7 @@ export type Logger = {
 	error: (message: string) => void
 }
 
-export type CreateLoggerOptions = {
+export interface CreateLoggerOptions {
 	verbosity: Verbosity
 	/** Sink for regular output. Defaults to `console.log`. */
 	write?: (line: string) => void

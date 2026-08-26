@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import type { Options } from '../src/options'
+import { type Options } from '../src/options'
 
 const clackMocks = {
 	intro: mock((): void => {}),
@@ -11,17 +11,17 @@ const clackMocks = {
 	isCancel: mock((): boolean => false)
 }
 
-mock.module('@clack/prompts', (): object => clackMocks)
+mock.module('@clack/prompts', () => clackMocks)
 
 const migrateBarrelImports = mock(async (): Promise<void> => {})
-mock.module('../src/migrate-barrel-imports', (): object => ({
+mock.module('../src/migrate-barrel-imports', () => ({
 	migrateBarrelImports
 }))
 
 // Import modules under test after mocks are registered
 const { main } = await import('../src/cli')
 
-type PromptAnswers = {
+interface PromptAnswers {
 	sourcePath: string
 	targetPath: string
 	includeExtension: boolean
@@ -37,29 +37,25 @@ function mockAnswers(overrides: Partial<PromptAnswers> = {}): PromptAnswers {
 		...overrides
 	}
 
-	clackMocks.text.mockImplementation(
-		async ({ message }: { message?: string }) => {
-			if (message?.startsWith('Source path')) {
-				return answers.sourcePath
-			}
-			if (message?.startsWith('Path to the directory')) {
-				return answers.targetPath
-			}
-			throw new Error(`Unexpected text prompt: ${String(message)}`)
+	clackMocks.text.mockImplementation(({ message }: { message?: string }) => {
+		if (message?.startsWith('Source path')) {
+			return answers.sourcePath
 		}
-	)
+		if (message?.startsWith('Path to the directory')) {
+			return answers.targetPath
+		}
+		throw new Error(`Unexpected text prompt: ${String(message)}`)
+	})
 
-	clackMocks.confirm.mockImplementation(
-		async ({ message }: { message?: string }) => {
-			if (message?.includes('Include js|jsx|ts|tsx|mjs|cjs')) {
-				return answers.includeExtension
-			}
-			if (message?.includes('dry-run mode')) {
-				return answers.dryRun
-			}
-			throw new Error(`Unexpected confirm prompt: ${String(message)}`)
+	clackMocks.confirm.mockImplementation(({ message }: { message?: string }) => {
+		if (message?.includes('Include js|jsx|ts|tsx|mjs|cjs')) {
+			return answers.includeExtension
 		}
-	)
+		if (message?.includes('dry-run mode')) {
+			return answers.dryRun
+		}
+		throw new Error(`Unexpected confirm prompt: ${String(message)}`)
+	})
 
 	return answers
 }

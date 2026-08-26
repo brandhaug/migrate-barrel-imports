@@ -67,7 +67,8 @@
 		"oxfmt": "catalog:",
 		"oxlint": "catalog:",
 		"oxlint-tsgolint": "catalog:",
-		"typescript": "catalog:"
+		"typescript": "catalog:",
+		"ultracite": "catalog:"
 	},
 	"engines": {
 		"bun": ">=1.4.0"
@@ -89,6 +90,7 @@
 		"oxlint": "1.79.0",
 		"oxlint-tsgolint": "7.0.2001",
 		"typescript": "7.0.2",
+		"ultracite": "7.10.6",
 		"vitest": "4.1.11"
 	}
 }

@@ -17,10 +17,9 @@
 
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import _generate from '@babel/generator'
+import { generate } from '@babel/generator'
 import { parse } from '@babel/parser'
-import type { NodePath } from '@babel/traverse'
-import _traverse from '@babel/traverse'
+import traverse, { type NodePath } from '@babel/traverse'
 import {
 	type ExportDefaultDeclaration,
 	type ExportNamedDeclaration,
@@ -52,14 +51,8 @@ import micromatch from 'micromatch'
 import { getBabelConfig } from './babel-config.js'
 import { formatImportDiff } from './import-diff.js'
 import { createLogger, type Logger } from './logger.js'
-import type { Options as MigrationOptions } from './options.js'
+import { type Options as MigrationOptions } from './options.js'
 
-// @ts-expect-error
-const generate: typeof _generate = _generate.default || _generate
-// @ts-expect-error
-const traverse: typeof _traverse = _traverse.default || _traverse
-
-/**
 /**
  * @property {string} source - Source file path containing exports
  * @property {string[]} exports - Array of exported names from the file
@@ -203,11 +196,6 @@ interface UpdateImportsParams {
 /** Logger used when a caller does not supply one. */
 const defaultLogger: Logger = createLogger({ verbosity: 'normal' })
 
-/** Renders an unknown thrown value as a log-friendly string. */
-function formatError(error: unknown): string {
-	return error instanceof Error ? error.message : String(error)
-}
-
 /**
  * Records a file that could not be parsed so the migration can skip it and carry on
  */
@@ -288,30 +276,73 @@ const ENTRY_POINT_FILE_NAME_PATTERN =
 	/^index\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)$/
 
 /**
+ * A package.json entry-point declaration. `exports` is a recursive
+ * string/array/object tree; `main` and `module` are plain strings. Map
+ * values may be null in malformed manifests; the walk skips them.
+ */
+type EntryPointSpec =
+	| string
+	| EntryPointSpec[]
+	| { [subpath: string]: EntryPointSpec | null }
+
+/** Fields in package.json that may declare an entry-point file. */
+const ENTRY_POINT_FIELDS = ['main', 'module', 'exports'] as const
+
+interface PackageManifest {
+	main?: EntryPointSpec
+	module?: EntryPointSpec
+	exports?: EntryPointSpec
+}
+
+/**
  * Collects the entry-point file paths a package declares via main, module and exports
  */
 async function getPackageEntryPoints(packagePath: string): Promise<string[]> {
 	try {
-		const manifest: Record<string, unknown> = JSON.parse(
-			await readFile(path.join(packagePath, 'package.json'), 'utf-8')
+		const manifest: PackageManifest = JSON.parse(
+			await readFile(path.join(packagePath, 'package.json'), 'utf8')
 		)
 
 		const entries: string[] = []
-		const collect = (value: unknown): void => {
-			if (typeof value === 'string') {
-				entries.push(path.resolve(packagePath, value))
-				return
-			}
-			if (typeof value === 'object' && value !== null) {
-				Object.values(value).forEach(collect)
+		for (const field of ENTRY_POINT_FIELDS) {
+			const spec = manifest[field]
+			if (spec !== undefined) {
+				collectEntryPointSpecs(spec, packagePath, entries)
 			}
 		}
-
-		;[manifest.main, manifest.module, manifest.exports].forEach(collect)
 
 		return entries
 	} catch {
 		return []
+	}
+}
+
+/**
+ * Collects the file paths declared by an entry-point spec. A string is a
+ * direct entry point; arrays and objects (subpath/condition maps) recurse.
+ * Malformed values (null, numbers, booleans) are skipped so one bad field
+ * never discards the entries a valid main/module already contributed.
+ */
+function collectEntryPointSpecs(
+	spec: EntryPointSpec | null,
+	packagePath: string,
+	entries: string[]
+): void {
+	if (spec === null) {
+		return
+	}
+	if (typeof spec === 'string') {
+		entries.push(path.resolve(packagePath, spec))
+		return
+	}
+	if (Array.isArray(spec)) {
+		for (const item of spec) {
+			collectEntryPointSpecs(item, packagePath, entries)
+		}
+		return
+	}
+	for (const item of Object.values(spec)) {
+		collectEntryPointSpecs(item, packagePath, entries)
 	}
 }
 
@@ -333,7 +364,7 @@ export async function isBarrelFile(
 	parseErrors?: ParseError[]
 ): Promise<boolean> {
 	try {
-		const content = await readFile(filePath, 'utf-8')
+		const content = await readFile(filePath, 'utf8')
 		const ast = parse(content, getBabelConfig(filePath))
 
 		let reExportCount = 0
@@ -613,7 +644,7 @@ export async function findExports({
 		logger.verbose(`\nProcessing file: ${file}`)
 
 		try {
-			const content = await readFile(fullPath, 'utf-8')
+			const content = await readFile(fullPath, 'utf8')
 			const ast = parse(content, getBabelConfig(fullPath))
 			const fileExports: string[] = []
 			const reExports: Record<string, string> = {}
@@ -702,15 +733,18 @@ export async function findExports({
 						})
 					}
 				},
-				ExportDefaultDeclaration(path: NodePath<ExportDefaultDeclaration>) {
-					const exported = path.node.declaration
-					const exportName = isIdentifier(exported)
-						? exported.name
-						: isFunctionDeclaration(exported) && exported.id
-							? exported.id.name
-							: isClassDeclaration(exported) && exported.id
-								? exported.id.name
-								: 'default'
+				ExportDefaultDeclaration(nodePath: NodePath<ExportDefaultDeclaration>) {
+					const exported = nodePath.node.declaration
+					let exportName: string
+					if (isIdentifier(exported)) {
+						exportName = exported.name
+					} else if (isFunctionDeclaration(exported) && exported.id) {
+						exportName = exported.id.name
+					} else if (isClassDeclaration(exported) && exported.id) {
+						exportName = exported.id.name
+					} else {
+						exportName = 'default'
+					}
 
 					fileExports.push(exportName)
 					fileExportSources[exportName] = file
@@ -724,7 +758,7 @@ export async function findExports({
 
 			// A name can be reached more than once in a file (for example a value
 			// re-export paired with a type re-export); report it only once.
-			const uniqueFileExports = Array.from(new Set(fileExports))
+			const uniqueFileExports = [...new Set(fileExports)]
 
 			if (uniqueFileExports.length > 0 || Object.keys(reExports).length > 0) {
 				exports.push({
@@ -788,18 +822,17 @@ async function findImports({
 			targetGlob,
 			logger
 		)
-		const files = (
-			await Promise.all(
-				scanDirectories.map((directory) =>
-					fg(['**/*.{ts,tsx,js,jsx}'], {
-						cwd: directory,
-						absolute: true,
-						ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'],
-						followSymbolicLinks: false
-					})
-				)
+		const scanned = await Promise.all(
+			scanDirectories.map((directory) =>
+				fg(['**/*.{ts,tsx,js,jsx}'], {
+					cwd: directory,
+					absolute: true,
+					ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'],
+					followSymbolicLinks: false
+				})
 			)
-		).flat()
+		)
+		const files = scanned.flat()
 
 		const excludedPaths = excludedPackagePaths.map((p) => path.resolve(p))
 		const targetFiles = files.filter(
@@ -811,22 +844,22 @@ async function findImports({
 		// Scan each file for imports
 		for (const file of targetFiles) {
 			try {
-				const content = await readFile(file, 'utf-8')
+				const content = await readFile(file, 'utf8')
 				const ast = parse(content, getBabelConfig(file))
 
 				const matchesPackage = (source: string): boolean =>
 					source === packageName || source.startsWith(`${packageName}/`)
 
 				traverse(ast, {
-					ImportDeclaration(path: NodePath<ImportDeclaration>) {
+					ImportDeclaration(nodePath: NodePath<ImportDeclaration>) {
 						// Check for exact package import or subpath import
-						if (matchesPackage(path.node.source.value)) {
+						if (matchesPackage(nodePath.node.source.value)) {
 							allFiles.add(file)
 						}
 					},
-					ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
+					ExportNamedDeclaration(nodePath: NodePath<ExportNamedDeclaration>) {
 						// `export { x } from "<package>"` is a barrel import too
-						const source = path.node.source
+						const source = nodePath.node.source
 						if (source && matchesPackage(source.value)) {
 							allFiles.add(file)
 						}
@@ -846,13 +879,13 @@ async function findImports({
 					micromatch.isMatch(relativePath, pattern)
 				)
 			) {
-				console.log(`File matches ignore pattern, skipping: ${relativePath}`)
+				logger.verbose(`File matches ignore pattern, skipping: ${relativePath}`)
 				allFiles.delete(file)
 				skipped.push(file)
 			}
 		}
 
-		const uniqueFiles = Array.from(allFiles)
+		const uniqueFiles = [...allFiles]
 		if (uniqueFiles.length > 0) {
 			logger.verbose(
 				`Found total of ${uniqueFiles.length} files with imports from ${packageName}`
@@ -867,7 +900,11 @@ async function findImports({
 
 		return { files: uniqueFiles, skipped }
 	} catch (error) {
-		logger.error(`Error finding imports: ${formatError(error)}`)
+		logger.error(
+			`Error finding imports: ${
+				error instanceof Error ? error.message : String(error)
+			}`
+		)
 		return { files: [], skipped: [] }
 	}
 }
@@ -952,16 +989,16 @@ async function updateImports({
 	let importsMigrated = 0
 
 	try {
-		const content = await readFile(filePath, 'utf-8')
+		const content = await readFile(filePath, 'utf8')
 		const ast = parse(content, getBabelConfig(filePath))
 		const importDeclarations: ImportDeclaration[] = []
 
 		// First pass: collect all import declarations
 		traverse(ast, {
-			ImportDeclaration(path: NodePath<ImportDeclaration>) {
-				const importSource = path.node.source.value
+			ImportDeclaration(nodePath: NodePath<ImportDeclaration>) {
+				const importSource = nodePath.node.source.value
 				if (importSource.startsWith(packageName)) {
-					importDeclarations.push(path.node)
+					importDeclarations.push(nodePath.node)
 				}
 			}
 		})
@@ -1007,11 +1044,10 @@ async function updateImports({
 				if (resolved.dedupeAliased) {
 					// Check if this import is aliased and if we already have the original import
 					const isAliased = specifier.local.name !== importName
-					const hasOriginalImport = Array.from(importsBySource.values()).some(
+					const hasOriginalImport = [...importsBySource.values()].some(
 						(specs) =>
 							specs.some(
 								(spec) =>
-									spec.imported &&
 									isIdentifier(spec.imported) &&
 									spec.imported.name === importName
 							)
@@ -1034,11 +1070,11 @@ async function updateImports({
 
 		// Second pass: update the AST with new imports
 		traverse(ast, {
-			ImportDeclaration(path: NodePath<ImportDeclaration>) {
-				const importSource = path.node.source.value
+			ImportDeclaration(nodePath: NodePath<ImportDeclaration>) {
+				const importSource = nodePath.node.source.value
 				if (importSource.startsWith(packageName)) {
 					// Remove the original import declaration
-					path.remove()
+					nodePath.remove()
 				}
 			}
 		})
@@ -1075,10 +1111,10 @@ async function updateImports({
 		// Third pass: rewrite `export ... from "<package>"` re-exports
 		const reExportPaths: Array<NodePath<ExportNamedDeclaration>> = []
 		traverse(ast, {
-			ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
-				const source = path.node.source
+			ExportNamedDeclaration(nodePath: NodePath<ExportNamedDeclaration>) {
+				const source = nodePath.node.source
 				if (source?.value.startsWith(packageName)) {
-					reExportPaths.push(path)
+					reExportPaths.push(nodePath)
 				}
 			}
 		})
@@ -1396,13 +1432,6 @@ export async function migrateBarrelImports(
 			)
 		}
 
-		if (parseErrors.length > 0) {
-			logger.summary('Unparseable files:')
-			parseErrors.forEach(({ filePath, message }) =>
-				logger.summary(`  - ${filePath}: ${message}`)
-			)
-		}
-
 		if (warnings.length > 0) {
 			logger.warn('\nWarnings:')
 			warnings.forEach((warning) => logger.warn(`  - ${warning}`))
@@ -1413,11 +1442,15 @@ export async function migrateBarrelImports(
 			stats,
 			warnings,
 			parseErrors,
-			changedFiles: Array.from(updatedFiles).toSorted(),
-			skippedFiles: Array.from(skippedFiles).toSorted()
+			changedFiles: [...updatedFiles].toSorted(),
+			skippedFiles: [...skippedFiles].toSorted()
 		}
 	} catch (error) {
-		logger.error(`Error during migration: ${formatError(error)}`)
+		logger.error(
+			`Error during migration: ${
+				error instanceof Error ? error.message : String(error)
+			}`
+		)
 		throw error
 	}
 }
@@ -1430,9 +1463,11 @@ export async function migrateBarrelImports(
  */
 async function getPackageName(packagePath: string): Promise<string | null> {
 	const packageJsonPath = path.join(packagePath, 'package.json')
-	const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'))
-	return typeof packageJson.name === 'string' && packageJson.name.length > 0
-		? packageJson.name
+	const manifest: { name?: unknown } = JSON.parse(
+		await readFile(packageJsonPath, 'utf8')
+	)
+	return typeof manifest.name === 'string' && manifest.name.length > 0
+		? manifest.name
 		: null
 }
 

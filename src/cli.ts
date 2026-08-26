@@ -1,10 +1,11 @@
 import { parseArgs } from 'node:util'
 import * as p from '@clack/prompts'
-import { migrateBarrelImports } from './migrate-barrel-imports.js'
-import type { MigrationResult } from './migrate-barrel-imports.js'
-import type { Verbosity } from './logger.js'
-import { defaultOptions } from './options.js'
-import type { Options } from './options.js'
+import {
+	migrateBarrelImports,
+	type MigrationResult
+} from './migrate-barrel-imports.js'
+import { type Verbosity } from './logger.js'
+import { defaultOptions, type Options } from './options.js'
 
 /** Defaults used when prompts are unavailable (stdin is not a TTY). */
 const NON_INTERACTIVE_INCLUDE_EXTENSION = true
@@ -143,12 +144,15 @@ function resolveVerbosityFlag(
 	return undefined
 }
 
-function extractNegations(argv: readonly string[]): {
+/** Positionals and negation flags pulled out of argv before parseArgs runs. */
+interface NegatedFlags {
 	args: string[]
 	noExtension: boolean
 	noIncludeBarrels: boolean
 	noDryRun: boolean
-} {
+}
+
+function extractNegations(argv: readonly string[]): NegatedFlags {
 	const args: string[] = []
 	let noExtension = false
 	let noIncludeBarrels = false
@@ -192,7 +196,7 @@ async function resolveSourcePath(
 		return undefined
 	}
 
-	return await p.text({
+	return p.text({
 		message: 'Source path (directory) for packages containing barrel files',
 		placeholder: 'packages',
 		validate: (value: string | undefined): string | Error | undefined => {
@@ -216,7 +220,7 @@ async function resolveTargetPath(
 		return defaultOptions.targetPath
 	}
 
-	return await p.text({
+	return p.text({
 		message: 'Path to the directory where imports should be migrated',
 		placeholder: defaultOptions.targetPath,
 		defaultValue: defaultOptions.targetPath
@@ -235,7 +239,7 @@ async function resolveIncludeExtension(
 		return NON_INTERACTIVE_INCLUDE_EXTENSION
 	}
 
-	return await p.confirm({
+	return p.confirm({
 		message:
 			'Include js|jsx|ts|tsx|mjs|cjs file extensions in import statements?',
 		initialValue: true
@@ -262,7 +266,7 @@ async function resolveDryRun(
 		return NON_INTERACTIVE_DRY_RUN
 	}
 
-	return await p.confirm({
+	return p.confirm({
 		message: 'Run in dry-run mode (preview changes without modifying files)?',
 		initialValue: false
 	})
@@ -302,7 +306,7 @@ async function runJson(args: CliArgs): Promise<void> {
 	console.log(JSON.stringify(result))
 }
 
-export type MainOptions = {
+export interface MainOptions {
 	/** Whether prompts may be shown. Defaults to whether stdin is a TTY. */
 	isInteractive?: boolean
 }

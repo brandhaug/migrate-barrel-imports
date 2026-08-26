@@ -1,5 +1,5 @@
 import path from 'node:path'
-import type { ParserOptions } from '@babel/parser'
+import { type ParserOptions } from '@babel/parser'
 
 /** Common Babel configuration for parsing TypeScript and JavaScript files */
 const BABEL_CONFIG: ParserOptions = {
