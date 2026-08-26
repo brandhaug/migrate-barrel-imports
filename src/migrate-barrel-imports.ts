@@ -51,6 +51,7 @@ import fg from 'fast-glob'
 import micromatch from 'micromatch'
 import { getBabelConfig } from './babel-config.js'
 import { formatImportDiff } from './import-diff.js'
+import { createLogger, type Logger } from './logger.js'
 import type { Options as MigrationOptions } from './options.js'
 
 // @ts-expect-error
@@ -104,10 +105,12 @@ export interface MigrationStats {
 export interface IsBarrelFileParams {
 	filePath: string
 	packagePath?: string
+	logger?: Logger
 }
 
 interface FindExportsParams {
 	packagePath: string
+	logger?: Logger
 	ignoreSourceFiles?: string[]
 	stats?: MigrationStats
 	parseErrors?: ParseError[]
@@ -116,6 +119,7 @@ interface FindExportsParams {
 interface FindImportsParams {
 	packageName: string
 	targetPath: string
+	logger?: Logger
 	ignoreTargetFiles?: string[]
 	stats?: MigrationStats
 	parseErrors?: ParseError[]
@@ -150,11 +154,20 @@ interface UpdateImportsParams {
 	filePath: string
 	packageName: string
 	exports: ExportInfo[]
+	logger?: Logger
 	includeExtension?: boolean
 	dryRun?: boolean
 	warnings?: string[]
 	stats?: MigrationStats
 	parseErrors?: ParseError[]
+}
+
+/** Logger used when a caller does not supply one. */
+const defaultLogger: Logger = createLogger({ verbosity: 'normal' })
+
+/** Renders an unknown thrown value as a log-friendly string. */
+function formatError(error: unknown): string {
+	return error instanceof Error ? error.message : String(error)
 }
 
 /**
@@ -163,14 +176,16 @@ interface UpdateImportsParams {
 function recordParseError({
 	filePath,
 	error,
-	parseErrors
+	parseErrors,
+	logger = defaultLogger
 }: {
 	filePath: string
 	error: unknown
 	parseErrors?: ParseError[]
+	logger?: Logger
 }): void {
 	const message = error instanceof Error ? error.message : String(error)
-	console.error(`Skipping ${filePath}: failed to parse: ${message}`)
+	logger.warn(`Skipping ${filePath}: failed to parse: ${message}`)
 
 	if (parseErrors?.some((parseError) => parseError.filePath === filePath)) {
 		return
@@ -265,7 +280,7 @@ function isEntryPointFileName(filePath: string): boolean {
  * @returns {Promise<boolean>} Whether the file is a barrel file
  */
 export async function isBarrelFile(
-	{ filePath, packagePath }: IsBarrelFileParams,
+	{ filePath, packagePath, logger = defaultLogger }: IsBarrelFileParams,
 	parseErrors?: ParseError[]
 ): Promise<boolean> {
 	try {
@@ -304,7 +319,7 @@ export async function isBarrelFile(
 		const total = reExportCount + otherStatementCount
 		return reExportCount / total >= PURE_RE_EXPORT_RATIO
 	} catch (error) {
-		recordParseError({ filePath, error, parseErrors })
+		recordParseError({ filePath, error, parseErrors, logger })
 		return false
 	}
 }
@@ -405,6 +420,7 @@ function recordExportFile(
  */
 export async function findExports({
 	packagePath,
+	logger = defaultLogger,
 	ignoreSourceFiles = [],
 	stats,
 	parseErrors
@@ -413,12 +429,14 @@ export async function findExports({
 	const barrelFiles = new Set<string>()
 	const exportFiles: Record<string, string[]> = {}
 
-	console.log(`Scanning for TypeScript and JavaScript files in: ${packagePath}`)
+	logger.verbose(
+		`Scanning for TypeScript and JavaScript files in: ${packagePath}`
+	)
 	const allFiles = await fg('**/*.{ts,tsx,js,jsx}', {
 		cwd: packagePath,
 		ignore: ['**/node_modules/**', '**/dist/**', '**/build/**']
 	})
-	console.log(`Found ${allFiles.length} files`)
+	logger.verbose(`Found ${allFiles.length} files`)
 
 	if (stats) {
 		stats.sourceFilesFound = allFiles.length
@@ -427,9 +445,14 @@ export async function findExports({
 	// First pass: identify barrel files
 	for (const file of allFiles) {
 		const fullPath = path.join(packagePath, file)
-		if (await isBarrelFile({ filePath: fullPath, packagePath }, parseErrors)) {
+		if (
+			await isBarrelFile(
+				{ filePath: fullPath, packagePath, logger },
+				parseErrors
+			)
+		) {
 			barrelFiles.add(file)
-			console.log(`Identified barrel file: ${file}`)
+			logger.verbose(`Identified barrel file: ${file}`)
 		}
 	}
 
@@ -440,14 +463,16 @@ export async function findExports({
 			micromatch.isMatch(file, pattern)
 		)
 		if (isIgnored) {
-			console.log(`File matches ignore pattern but will be preserved: ${file}`)
+			logger.verbose(
+				`File matches ignore pattern but will be preserved: ${file}`
+			)
 			if (stats) {
 				stats.sourceFilesSkipped++
 			}
 		}
 
 		const fullPath = path.join(packagePath, file)
-		console.log(`\nProcessing file: ${file}`)
+		logger.verbose(`\nProcessing file: ${file}`)
 
 		try {
 			const content = await readFile(fullPath, 'utf-8')
@@ -579,18 +604,18 @@ export async function findExports({
 
 				// Print exports in a single line
 				if (uniqueFileExports.length > 0) {
-					console.log(
+					logger.verbose(
 						`Found exports ${uniqueFileExports.join(', ')} in ${file}`
 					)
 				}
 			}
 		} catch (error) {
-			recordParseError({ filePath: fullPath, error, parseErrors })
+			recordParseError({ filePath: fullPath, error, parseErrors, logger })
 		}
 	}
 
-	console.log(`\nTotal exports found: ${exports.length}`)
-	console.log(`Barrel files found: ${barrelFiles.size}`)
+	logger.verbose(`\nTotal exports found: ${exports.length}`)
+	logger.verbose(`Barrel files found: ${barrelFiles.size}`)
 	return exports
 }
 
@@ -610,6 +635,7 @@ export async function findExports({
 async function findImports({
 	packageName,
 	targetPath,
+	logger = defaultLogger,
 	ignoreTargetFiles = [],
 	stats,
 	parseErrors
@@ -625,7 +651,7 @@ async function findImports({
 			followSymbolicLinks: false
 		})
 
-		console.log(`Found ${files.length} files to scan`)
+		logger.verbose(`Found ${files.length} files to scan`)
 
 		// Scan each file for imports
 		for (const file of files) {
@@ -659,26 +685,26 @@ async function findImports({
 					}
 				})
 			} catch (error) {
-				recordParseError({ filePath: file, error, parseErrors })
+				recordParseError({ filePath: file, error, parseErrors, logger })
 			}
 		}
 
 		const uniqueFiles = Array.from(allFiles)
 		if (uniqueFiles.length > 0) {
-			console.log(
+			logger.verbose(
 				`Found total of ${uniqueFiles.length} files with imports from ${packageName}`
 			)
-			console.log('Files found:')
+			logger.verbose('Files found:')
 			for (const file of uniqueFiles) {
-				console.log(`  ${file}`)
+				logger.verbose(`  ${file}`)
 			}
 		} else {
-			console.log(`No files found importing from ${packageName}`)
+			logger.verbose(`No files found importing from ${packageName}`)
 		}
 
 		return uniqueFiles
 	} catch (error) {
-		console.error('Error finding imports:', error)
+		logger.error(`Error finding imports: ${formatError(error)}`)
 		return []
 	}
 }
@@ -700,13 +726,14 @@ async function updateImports({
 	filePath,
 	packageName,
 	exports,
+	logger = defaultLogger,
 	includeExtension = true,
 	dryRun = false,
 	warnings,
 	stats,
 	parseErrors
 }: UpdateImportsParams): Promise<void> {
-	console.log(`\nProcessing file: ${filePath}`)
+	logger.verbose(`\nProcessing file: ${filePath}`)
 	let modified = false
 
 	try {
@@ -916,16 +943,16 @@ async function updateImports({
 			).code
 
 			if (dryRun) {
-				console.log(`[dry-run] Would update imports in ${filePath}`)
+				logger.info(`[dry-run] Would update imports in ${filePath}`)
 				const diff = formatImportDiff({
 					filePath,
 					before: content,
 					after: output
 				})
-				if (diff) console.log(diff)
+				if (diff) logger.info(diff)
 			} else {
 				await writeFile(filePath, output)
-				console.log(`Writing changes to ${filePath}`)
+				logger.verbose(`Writing changes to ${filePath}`)
 			}
 
 			if (stats) {
@@ -935,7 +962,7 @@ async function updateImports({
 			stats.noChangesNeeded++
 		}
 	} catch (error) {
-		recordParseError({ filePath, error, parseErrors })
+		recordParseError({ filePath, error, parseErrors, logger })
 	}
 }
 
@@ -954,7 +981,8 @@ async function updateImports({
  * @returns {Promise<void>}
  */
 export async function migrateBarrelImports(
-	options: MigrationOptions
+	options: MigrationOptions,
+	logger: Logger = createLogger({ verbosity: options.verbosity ?? 'normal' })
 ): Promise<MigrationResult> {
 	const {
 		sourcePath,
@@ -988,16 +1016,16 @@ export async function migrateBarrelImports(
 	const parseErrors: ParseError[] = []
 
 	if (dryRun) {
-		console.log('[dry-run] Running in dry-run mode, no files will be modified')
+		logger.info('[dry-run] Running in dry-run mode, no files will be modified')
 	}
 
 	try {
 		// Find source packages
-		const sourcePackages = await findSourcePackages(sourcePath)
+		const sourcePackages = await findSourcePackages(sourcePath, logger)
 		stats.sourcePackagesFound = sourcePackages.length
 
 		for (const packagePath of sourcePackages) {
-			console.log(`\nProcessing package: ${packagePath}`)
+			logger.verbose(`\nProcessing package: ${packagePath}`)
 
 			// Read the package name first, so an unreadable package.json only skips
 			// this package instead of aborting the whole migration
@@ -1008,14 +1036,20 @@ export async function migrateBarrelImports(
 				recordParseError({
 					filePath: path.join(packagePath, 'package.json'),
 					error,
-					parseErrors
+					parseErrors,
+					logger
 				})
 				stats.sourcePackagesSkipped++
 				continue
 			}
 
 			// Find exports in source package
-			const exports = await findExports({ packagePath, stats, parseErrors })
+			const exports = await findExports({
+				packagePath,
+				logger,
+				stats,
+				parseErrors
+			})
 			stats.exportsFound = exports.reduce(
 				(total, info) => total + info.exports.length,
 				0
@@ -1026,6 +1060,7 @@ export async function migrateBarrelImports(
 			const targetFiles = await findImports({
 				packageName,
 				targetPath,
+				logger,
 				ignoreTargetFiles,
 				stats,
 				parseErrors
@@ -1039,6 +1074,7 @@ export async function migrateBarrelImports(
 					filePath,
 					packageName,
 					exports,
+					logger,
 					includeExtension,
 					dryRun,
 					warnings,
@@ -1056,40 +1092,44 @@ export async function migrateBarrelImports(
 		}
 
 		// Print migration summary
-		console.log('\nMigration Summary')
+		logger.summary('\nMigration Summary')
 		if (dryRun) {
-			console.log('Mode: dry-run (no files were modified)')
+			logger.summary('Mode: dry-run (no files were modified)')
 		}
-		console.log(`Source packages found: ${stats.sourcePackagesFound}`)
-		console.log(`Source packages processed: ${stats.sourcePackagesProcessed}`)
-		console.log(`Source packages skipped: ${stats.sourcePackagesSkipped}`)
-		console.log(`Source files found: ${stats.sourceFilesFound}`)
-		console.log(`Source files with exports: ${stats.sourceFilesWithExports}`)
-		console.log(`Source files skipped: ${stats.sourceFilesSkipped}`)
-		console.log(`Exports found: ${stats.exportsFound}`)
-		console.log(`Target files found: ${stats.targetFilesFound}`)
-		console.log(`Target files processed: ${stats.targetFilesProcessed}`)
-		console.log(`Target files with imports updated: ${stats.importsUpdated}`)
-		console.log(`Target files with no changes needed: ${stats.noChangesNeeded}`)
-		console.log(`Target files skipped: ${stats.targetFilesSkipped}`)
-		console.log(`Total imports migrated: ${stats.importsMigrated}`)
-		console.log(`Files that could not be parsed: ${parseErrors.length}`)
+		logger.summary(`Source packages found: ${stats.sourcePackagesFound}`)
+		logger.summary(
+			`Source packages processed: ${stats.sourcePackagesProcessed}`
+		)
+		logger.summary(`Source packages skipped: ${stats.sourcePackagesSkipped}`)
+		logger.summary(`Source files found: ${stats.sourceFilesFound}`)
+		logger.summary(`Source files with exports: ${stats.sourceFilesWithExports}`)
+		logger.summary(`Source files skipped: ${stats.sourceFilesSkipped}`)
+		logger.summary(`Exports found: ${stats.exportsFound}`)
+		logger.summary(`Target files found: ${stats.targetFilesFound}`)
+		logger.summary(`Target files processed: ${stats.targetFilesProcessed}`)
+		logger.summary(`Target files with imports updated: ${stats.importsUpdated}`)
+		logger.summary(
+			`Target files with no changes needed: ${stats.noChangesNeeded}`
+		)
+		logger.summary(`Target files skipped: ${stats.targetFilesSkipped}`)
+		logger.summary(`Total imports migrated: ${stats.importsMigrated}`)
+		logger.summary(`Files that could not be parsed: ${parseErrors.length}`)
 
 		if (parseErrors.length > 0) {
-			console.log('Unparseable files:')
+			logger.summary('Unparseable files:')
 			parseErrors.forEach(({ filePath, message }) =>
-				console.log(`  - ${filePath}: ${message}`)
+				logger.summary(`  - ${filePath}: ${message}`)
 			)
 		}
 
 		if (warnings.length > 0) {
-			console.log('\nWarnings:')
-			warnings.forEach((warning) => console.log(`  - ${warning}`))
+			logger.warn('\nWarnings:')
+			warnings.forEach((warning) => logger.warn(`  - ${warning}`))
 		}
 
 		return { stats, warnings, parseErrors }
 	} catch (error) {
-		console.error('Error during migration:', error)
+		logger.error(`Error during migration: ${formatError(error)}`)
 		throw error
 	}
 }
@@ -1112,13 +1152,16 @@ async function getPackageName(packagePath: string): Promise<string> {
  * @param {string} sourcePath - Path to search for source packages
  * @returns {Promise<string[]>} Array of package paths
  */
-async function findSourcePackages(sourcePath: string): Promise<string[]> {
+async function findSourcePackages(
+	sourcePath: string,
+	logger: Logger = defaultLogger
+): Promise<string[]> {
 	// Use a local variable instead of reassigning the parameter
 	const resolvedPath = path.isAbsolute(sourcePath)
 		? path.resolve(sourcePath)
 		: path.join(process.cwd(), sourcePath)
 
-	console.log(`Looking for source packages in: ${resolvedPath}`)
+	logger.verbose(`Looking for source packages in: ${resolvedPath}`)
 
 	const packageJsonFiles = await fg('{package.json,**/package.json}', {
 		cwd: resolvedPath,
@@ -1126,8 +1169,8 @@ async function findSourcePackages(sourcePath: string): Promise<string[]> {
 		absolute: true
 	})
 
-	console.log(`Found ${packageJsonFiles.length} package.json files:`)
-	packageJsonFiles.forEach((file) => console.log(`  - ${file}`))
+	logger.verbose(`Found ${packageJsonFiles.length} package.json files:`)
+	packageJsonFiles.forEach((file) => logger.verbose(`  - ${file}`))
 
 	return packageJsonFiles.map((file) => path.dirname(file))
 }

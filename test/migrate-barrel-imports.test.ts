@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'bun:test'
+import { createLogger, type Verbosity } from '../src/logger'
 import {
 	isBarrelFile,
 	type ExportInfo,
@@ -1321,16 +1322,16 @@ export type { WorkspaceOverviewDto } from './dto';
 `
 		})
 		const lines: string[] = []
-		const originalLog = console.log
-		console.log = (...args: unknown[]): void => {
-			lines.push(args.join(' '))
-		}
 
-		try {
-			await findExports({ packagePath })
-		} finally {
-			console.log = originalLog
-		}
+		await findExports({
+			packagePath,
+			logger: createLogger({
+				verbosity: 'verbose',
+				write: (line: string): void => {
+					lines.push(line)
+				}
+			})
+		})
 
 		const indexLine = lines.find(
 			(line) =>
@@ -1501,5 +1502,247 @@ export const calculateArea = (radius: number): number => {
 		)
 
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+})
+
+describe.concurrent('output verbosity', (): void => {
+	const runWithVerbosity = async (
+		testName: string,
+		verbosity: Verbosity
+	): Promise<string[]> => {
+		const { monorepoDir, sourceDir, targetDir } = createTestSetup(testName)
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/utils.ts':
+				'export const add = (a: number, b: number): number => a + b;\n',
+			'src/index.ts': 'export * from "./utils";\n'
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/calculator.ts'),
+			'import { add } from "@test/source-lib";\nexport const double = (n: number): number => add(n, n);\n'
+		)
+
+		const lines: string[] = []
+		await migrateBarrelImports(
+			{
+				...defaultOptions,
+				sourcePath: sourceDir,
+				targetPath: monorepoDir,
+				verbosity
+			},
+			createLogger({
+				verbosity,
+				write: (line: string): void => {
+					lines.push(line)
+				}
+			})
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+
+		return lines
+	}
+
+	it('prints only the migration summary in quiet mode', async () => {
+		const output = (await runWithVerbosity('quiet-mode', 'quiet')).join('\n')
+
+		expect(output).toContain('Migration Summary')
+		expect(output).toContain('Total imports migrated:')
+		expect(output).not.toContain('Processing file:')
+		expect(output).not.toContain('Scanning for TypeScript')
+	})
+
+	it('prints the summary but no per-file processing output by default', async () => {
+		const output = (await runWithVerbosity('normal-mode', 'normal')).join('\n')
+
+		expect(output).toContain('Migration Summary')
+		expect(output).not.toContain('Processing file:')
+		expect(output).not.toContain('Scanning for TypeScript')
+	})
+
+	it('prints per-file processing output in verbose mode', async () => {
+		const output = (await runWithVerbosity('verbose-mode', 'verbose')).join(
+			'\n'
+		)
+
+		expect(output).toContain('Processing file:')
+		expect(output).toContain('Scanning for TypeScript')
+		expect(output).toContain('Migration Summary')
+	})
+
+	it('truncates a long export listing to 500 characters plus an ellipsis', async () => {
+		const { monorepoDir, sourceDir, targetDir } = createTestSetup('truncation')
+
+		const manyExports = Array.from(
+			{ length: 200 },
+			(_, index) => `export const generatedExport${index} = ${index};`
+		).join('\n')
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/codegen.ts': `${manyExports}\n`,
+			'src/index.ts': 'export * from "./codegen";\n'
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/app.ts'),
+			'import { generatedExport0 } from "@test/source-lib";\nexport const value = generatedExport0;\n'
+		)
+
+		const lines: string[] = []
+		await migrateBarrelImports(
+			{
+				...defaultOptions,
+				sourcePath: sourceDir,
+				targetPath: monorepoDir,
+				verbosity: 'verbose'
+			},
+			createLogger({
+				verbosity: 'verbose',
+				write: (line: string): void => {
+					lines.push(line)
+				}
+			})
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+
+		const exportListing = lines.find((line) =>
+			line.startsWith('Found exports generatedExport0')
+		)
+
+		expect(exportListing).toBeDefined()
+		expect(exportListing).toHaveLength(503)
+		expect(exportListing?.endsWith('...')).toBe(true)
+	})
+
+	const runDryRun = async (
+		testName: string,
+		verbosity: Verbosity
+	): Promise<string[]> => {
+		const { monorepoDir, sourceDir, targetDir } = createTestSetup(testName)
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/utils.ts':
+				'export const add = (a: number, b: number): number => a + b;\n',
+			'src/index.ts': 'export * from "./utils";\n'
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/calculator.ts'),
+			'import { add } from "@test/source-lib";\nexport const double = (n: number): number => add(n, n);\n'
+		)
+
+		const lines: string[] = []
+		await migrateBarrelImports(
+			{
+				...defaultOptions,
+				sourcePath: sourceDir,
+				targetPath: monorepoDir,
+				dryRun: true,
+				verbosity
+			},
+			createLogger({
+				verbosity,
+				write: (line: string): void => {
+					lines.push(line)
+				}
+			})
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+
+		return lines
+	}
+
+	it('prints the dry-run import diff by default', async () => {
+		const output = (await runDryRun('dry-run-normal', 'normal')).join('\n')
+
+		expect(output).toContain('[dry-run] Would update imports in')
+		expect(output).toContain(
+			'+import { add } from "@test/source-lib/src/utils"'
+		)
+		expect(output).not.toContain('Processing file:')
+	})
+
+	it('suppresses the dry-run import diff in quiet mode', async () => {
+		const output = (await runDryRun('dry-run-quiet', 'quiet')).join('\n')
+
+		expect(output).not.toContain('[dry-run] Would update imports in')
+		expect(output).toContain('Mode: dry-run (no files were modified)')
+	})
+
+	const runWithUnparseableFile = async (
+		testName: string,
+		verbosity: Verbosity
+	): Promise<string[]> => {
+		const { monorepoDir, sourceDir, targetDir } = createTestSetup(testName)
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/utils.ts':
+				'export const add = (a: number, b: number): number => a + b;\n',
+			'src/broken.ts': 'export const broken = (((;\n',
+			'src/index.ts': 'export * from "./utils";\n'
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/calculator.ts'),
+			'import { add } from "@test/source-lib";\nexport const double = (n: number): number => add(n, n);\n'
+		)
+
+		const lines: string[] = []
+		await migrateBarrelImports(
+			{
+				...defaultOptions,
+				sourcePath: sourceDir,
+				targetPath: monorepoDir,
+				verbosity
+			},
+			createLogger({
+				verbosity,
+				write: (line: string): void => {
+					lines.push(line)
+				}
+			})
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+
+		return lines
+	}
+
+	it('warns about unparseable files by default and still migrates', async () => {
+		const output = (
+			await runWithUnparseableFile('parse-error-normal', 'normal')
+		).join('\n')
+
+		expect(output).toContain('src/broken.ts: failed to parse')
+		expect(output).toContain('Files that could not be parsed: 1')
+		expect(output).toContain('Total imports migrated: 1')
+	})
+
+	it('suppresses parse warnings in quiet mode but keeps the summary count', async () => {
+		const output = (
+			await runWithUnparseableFile('parse-error-quiet', 'quiet')
+		).join('\n')
+
+		expect(output).not.toContain('Skipping')
+		expect(output).toContain('Files that could not be parsed: 1')
 	})
 })

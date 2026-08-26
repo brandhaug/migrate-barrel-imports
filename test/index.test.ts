@@ -68,6 +68,9 @@ describe('index', (): void => {
 	beforeEach((): void => {
 		clackMocks.text.mockReset()
 		clackMocks.confirm.mockReset()
+		clackMocks.intro.mockClear()
+		clackMocks.outro.mockClear()
+		clackMocks.log.info.mockClear()
 		migrateBarrelImports.mockReset()
 		migrateBarrelImports.mockImplementation(async (): Promise<void> => {})
 		clackMocks.isCancel.mockReturnValue(false)
@@ -89,7 +92,8 @@ describe('index', (): void => {
 			ignoreSourceFiles: [],
 			ignoreTargetFiles: [],
 			includeExtension: false,
-			dryRun: true
+			dryRun: true,
+			verbosity: 'normal'
 		}
 
 		expect(migrateBarrelImports).toHaveBeenCalledWith(options)
@@ -119,7 +123,8 @@ describe('index', (): void => {
 			ignoreSourceFiles: ['**/*.test.ts', '**/node_modules/**'],
 			ignoreTargetFiles: ['**/*.spec.ts', '**/dist/**'],
 			includeExtension: false,
-			dryRun: true
+			dryRun: true,
+			verbosity: 'normal'
 		}
 
 		expect(migrateBarrelImports).toHaveBeenCalledWith(options)
@@ -138,7 +143,8 @@ describe('index', (): void => {
 			ignoreSourceFiles: [],
 			ignoreTargetFiles: [],
 			includeExtension: true,
-			dryRun: false
+			dryRun: false,
+			verbosity: 'normal'
 		}
 
 		expect(migrateBarrelImports).toHaveBeenCalledWith(options)
@@ -174,5 +180,44 @@ describe('index', (): void => {
 		await main()
 
 		expect(validationError).toBe('Source path is required')
+	})
+
+	it('should pass --quiet through as quiet verbosity', async (): Promise<void> => {
+		mockAnswers()
+
+		await main(['libs/*', '.', '--extension', '--no-dry-run', '--quiet'])
+
+		expect(migrateBarrelImports).toHaveBeenCalledWith(
+			expect.objectContaining({ verbosity: 'quiet' })
+		)
+	})
+
+	it('should pass --verbose through as verbose verbosity', async (): Promise<void> => {
+		mockAnswers()
+
+		await main(['libs/*', '.', '--extension', '--no-dry-run', '--verbose'])
+
+		expect(migrateBarrelImports).toHaveBeenCalledWith(
+			expect.objectContaining({ verbosity: 'verbose' })
+		)
+	})
+
+	it('should not print the intro banner or outro in quiet mode', async (): Promise<void> => {
+		mockAnswers()
+
+		await main(['libs/*', '.', '--extension', '--no-dry-run', '--quiet'])
+
+		expect(clackMocks.intro).not.toHaveBeenCalled()
+		expect(clackMocks.log.info).not.toHaveBeenCalled()
+		expect(clackMocks.outro).not.toHaveBeenCalled()
+	})
+
+	it('should print the intro banner by default', async (): Promise<void> => {
+		mockAnswers()
+
+		await main(['libs/*', '.', '--extension', '--no-dry-run'])
+
+		expect(clackMocks.intro).toHaveBeenCalled()
+		expect(clackMocks.outro).toHaveBeenCalled()
 	})
 })

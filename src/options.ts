@@ -5,7 +5,10 @@
  * @property {string[]} ignoreSourceFiles - Patterns to ignore when scanning source files
  * @property {string[]} ignoreTargetFiles - Patterns to ignore when scanning target files
  * @property {boolean} [includeExtension] - Whether to include file extensions in imports
+ * @property {Verbosity} [verbosity] - How much output the migration prints
  */
+import type { Verbosity } from './logger.js'
+
 export type Options = {
 	sourcePath: string
 	targetPath: string
@@ -13,11 +16,13 @@ export type Options = {
 	ignoreTargetFiles: string[]
 	includeExtension?: boolean
 	dryRun?: boolean
+	verbosity?: Verbosity
 }
 
 export const defaultOptions: Omit<Options, 'sourcePath'> = {
 	targetPath: '.',
 	ignoreSourceFiles: [],
 	ignoreTargetFiles: [],
-	includeExtension: false
+	includeExtension: false,
+	verbosity: 'normal'
 }
