@@ -22,7 +22,7 @@ import { bar } from '@repo/package/src/bar'
 
 ## Features
 
-- Glob patterns for targeting multiple packages at once
+- Recursive package discovery: every `package.json` under the source directory is migrated
 - Automatic resolution of re-exported symbols to their source files
 - Configurable file ignore patterns for both source and target directories
 - Optional file extension stripping for bundler-friendly imports
@@ -52,10 +52,15 @@ npx migrate-barrel-imports <source-path> [target-path] [options]
 
 ### Arguments
 
-| Argument      | Description                                                                 | Default                 |
-| ------------- | --------------------------------------------------------------------------- | ----------------------- |
-| `source-path` | Directory pattern for source packages (e.g. `libs/*`, `packages/{ui,core}`) | _(required)_            |
-| `target-path` | Directory where imports should be migrated                                  | `.` (current directory) |
+| Argument      | Description                                                                             | Default                 |
+| ------------- | --------------------------------------------------------------------------------------- | ----------------------- |
+| `source-path` | Directory scanned recursively for packages (e.g. `packages`, `libs/my-lib`). Not a glob | _(required)_            |
+| `target-path` | Directory where imports should be migrated                                              | `.` (current directory) |
+
+`source-path` is a directory, not a glob. It is scanned recursively for
+`package.json` files, so `packages` migrates every package below it. Passing a
+pattern such as `packages/*` fails with an error instead of silently finding
+nothing.
 
 ### Options
 
@@ -82,6 +87,12 @@ are always printed. Single log lines longer than 500 characters are truncated
 with an ellipsis, which keeps generated files with thousands of exports from
 flooding the terminal.
 
+When arguments or flags are omitted, the CLI falls back to interactive prompts
+for the missing values only, and only when stdin is a TTY. Without a TTY
+(scripts, CI, piped input) it never prompts: `--extension` defaults to on,
+`--dry-run` to off, `target-path` to the current directory, and a missing
+`source-path` exits with code 1 and an error.
+
 ### JSON output
 
 `--json` makes the CLI print exactly one JSON document to stdout and suppress
@@ -94,7 +105,7 @@ Because there is no interactive fallback in this mode, `source-path` must be
 passed as an argument; without it the CLI exits with code 1.
 
 ```bash
-migrate-barrel-imports "libs/*" . --json --dry-run | jq '.stats.importsMigrated'
+migrate-barrel-imports libs . --json --dry-run | jq '.stats.importsMigrated'
 ```
 
 ```json
@@ -138,10 +149,6 @@ migrate-barrel-imports "libs/*" . --json --dry-run | jq '.stats.importsMigrated'
 | `changedFiles` | Target files whose imports were rewritten (or would be, in dry-run)         |
 | `skippedFiles` | Target files left untouched, by `--ignore-target-files` or barrel detection |
 
-When arguments or flags are omitted, the CLI falls back to interactive prompts
-for the missing values only. Supplying the source path (and any flags) runs the
-migration fully non-interactive, which makes it usable in scripts and CI.
-
 ### Barrel files as targets
 
 Barrel files are never rewritten by default. Rewriting the `export ... from`
@@ -177,23 +184,23 @@ migrate-barrel-imports ./packages/my-lib \
   --ignore-source-files "**/__tests__/**,**/__mocks__/**" \
   --ignore-target-files "**/*.test.ts"
 
-# Migrate multiple packages using glob pattern
-migrate-barrel-imports "libs/*" --no-extension
+# Migrate every package under a directory
+migrate-barrel-imports libs --no-extension
 
 # Print only the migration summary
-migrate-barrel-imports "libs/*" --quiet
+migrate-barrel-imports libs --quiet
 
 # Also rewrite the re-exports inside barrel files
-migrate-barrel-imports "libs/*" --include-barrels
+migrate-barrel-imports libs --include-barrels
 
-# Migrate specific packages
-migrate-barrel-imports "packages/{ui,core,utils}" --ignore-target-files "**/*.test.ts"
+# Migrate one package
+migrate-barrel-imports packages/ui --ignore-target-files "**/*.test.ts"
 
 # Scan only the apps/* directories for imports to rewrite
-migrate-barrel-imports "libs/*" . --target-glob "apps/*"
+migrate-barrel-imports libs . --target-glob "apps/*"
 
 # Machine-readable report for CI
-migrate-barrel-imports "libs/*" . --json --dry-run > report.json
+migrate-barrel-imports libs . --json --dry-run > report.json
 ```
 
 ## Contributing

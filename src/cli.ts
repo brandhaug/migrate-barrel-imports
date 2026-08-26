@@ -1,9 +1,14 @@
 import { parseArgs } from 'node:util'
 import * as p from '@clack/prompts'
 import { migrateBarrelImports } from './migrate-barrel-imports.js'
+import type { MigrationResult } from './migrate-barrel-imports.js'
 import type { Verbosity } from './logger.js'
 import { defaultOptions } from './options.js'
 import type { Options } from './options.js'
+
+/** Defaults used when prompts are unavailable (stdin is not a TTY). */
+const NON_INTERACTIVE_INCLUDE_EXTENSION = true
+const NON_INTERACTIVE_DRY_RUN = false
 
 export type CliArgs = Partial<Omit<Options, 'targetPath'>> & {
 	targetPath?: string
@@ -86,7 +91,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
 		console.log(`migrate-barrel-imports [source-path] [target-path] [options]
 
 Positionals:
-  source-path              Glob pattern for packages containing barrel files (e.g. libs/*)
+  source-path              Directory scanned recursively for packages containing barrel files (e.g. packages)
   target-path              Directory where imports should be migrated (default: .)
 
 Options:
@@ -100,7 +105,11 @@ Options:
   -q, --quiet                      Print only the migration summary
   --verbose                        Print per-file progress in addition to the summary
   --json                           Print one JSON report to stdout and suppress all other output
-  -h, --help                       Show this help`)
+  -h, --help                       Show this help
+
+Prompts are shown only when stdin is a TTY. Without one, --extension defaults to
+on, --dry-run to off, target-path to the current directory, and a missing
+source-path exits with code 1.`)
 		process.exit(0)
 	}
 
@@ -172,15 +181,20 @@ function splitPatterns(value: string | undefined): string[] | undefined {
 }
 
 async function resolveSourcePath(
-	cliValue: string | undefined
-): Promise<string | symbol> {
+	cliValue: string | undefined,
+	isInteractive: boolean
+): Promise<string | symbol | undefined> {
 	if (cliValue !== undefined && cliValue.trim().length > 0) {
 		return cliValue
 	}
 
+	if (!isInteractive) {
+		return undefined
+	}
+
 	return await p.text({
-		message: 'Source path/glob for packages containing barrel files',
-		placeholder: 'libs/*',
+		message: 'Source path (directory) for packages containing barrel files',
+		placeholder: 'packages',
 		validate: (value: string | undefined): string | Error | undefined => {
 			if (value === undefined || value.trim().length === 0) {
 				return 'Source path is required'
@@ -191,10 +205,15 @@ async function resolveSourcePath(
 }
 
 async function resolveTargetPath(
-	cliValue: string | undefined
+	cliValue: string | undefined,
+	isInteractive: boolean
 ): Promise<string | symbol> {
 	if (cliValue !== undefined && cliValue.trim().length > 0) {
 		return cliValue
+	}
+
+	if (!isInteractive) {
+		return defaultOptions.targetPath
 	}
 
 	return await p.text({
@@ -205,10 +224,15 @@ async function resolveTargetPath(
 }
 
 async function resolveIncludeExtension(
-	cliValue: boolean | undefined
+	cliValue: boolean | undefined,
+	isInteractive: boolean
 ): Promise<boolean | symbol> {
 	if (cliValue !== undefined) {
 		return cliValue
+	}
+
+	if (!isInteractive) {
+		return NON_INTERACTIVE_INCLUDE_EXTENSION
 	}
 
 	return await p.confirm({
@@ -227,10 +251,15 @@ function resolveIgnoreTargetFiles(cliValue: string[] | undefined): string[] {
 }
 
 async function resolveDryRun(
-	cliValue: boolean | undefined
+	cliValue: boolean | undefined,
+	isInteractive: boolean
 ): Promise<boolean | symbol> {
 	if (cliValue !== undefined) {
 		return cliValue
+	}
+
+	if (!isInteractive) {
+		return NON_INTERACTIVE_DRY_RUN
 	}
 
 	return await p.confirm({
@@ -250,22 +279,37 @@ async function runJson(args: CliArgs): Promise<void> {
 		return
 	}
 
-	const result = await migrateBarrelImports({
-		sourcePath: args.sourcePath,
-		targetPath: args.targetPath ?? defaultOptions.targetPath,
-		ignoreSourceFiles: resolveIgnoreSourceFiles(args.ignoreSourceFiles),
-		ignoreTargetFiles: resolveIgnoreTargetFiles(args.ignoreTargetFiles),
-		includeExtension: args.includeExtension ?? true,
-		includeBarrels: args.includeBarrels ?? defaultOptions.includeBarrels,
-		dryRun: args.dryRun ?? false,
-		json: true
-	})
+	let result: MigrationResult
+	try {
+		result = await migrateBarrelImports({
+			sourcePath: args.sourcePath,
+			targetPath: args.targetPath ?? defaultOptions.targetPath,
+			targetGlob: args.targetGlob,
+			ignoreSourceFiles: resolveIgnoreSourceFiles(args.ignoreSourceFiles),
+			ignoreTargetFiles: resolveIgnoreTargetFiles(args.ignoreTargetFiles),
+			includeExtension:
+				args.includeExtension ?? NON_INTERACTIVE_INCLUDE_EXTENSION,
+			includeBarrels: args.includeBarrels ?? defaultOptions.includeBarrels,
+			dryRun: args.dryRun ?? NON_INTERACTIVE_DRY_RUN,
+			json: true
+		})
+	} catch {
+		// migrateBarrelImports already reported the failure through its logger
+		process.exitCode = 1
+		return
+	}
 
 	console.log(JSON.stringify(result))
 }
 
+export type MainOptions = {
+	/** Whether prompts may be shown. Defaults to whether stdin is a TTY. */
+	isInteractive?: boolean
+}
+
 export async function main(
-	argv: readonly string[] = process.argv.slice(2)
+	argv: readonly string[] = process.argv.slice(2),
+	{ isInteractive = process.stdin.isTTY }: MainOptions = {}
 ): Promise<void> {
 	const args = parseCliArgs(argv)
 
@@ -284,41 +328,58 @@ export async function main(
 		)
 	}
 
-	const sourcePath = await resolveSourcePath(args.sourcePath)
+	const sourcePath = await resolveSourcePath(args.sourcePath, isInteractive)
 	if (p.isCancel(sourcePath)) {
 		p.cancel('Migration cancelled')
 		return
 	}
 
-	const targetPath = await resolveTargetPath(args.targetPath)
+	if (sourcePath === undefined) {
+		p.log.error(
+			'source-path is required when stdin is not a TTY. Pass it as the first argument, e.g. migrate-barrel-imports packages .'
+		)
+		process.exitCode = 1
+		return
+	}
+
+	const targetPath = await resolveTargetPath(args.targetPath, isInteractive)
 	if (p.isCancel(targetPath)) {
 		p.cancel('Migration cancelled')
 		return
 	}
 
-	const includeExtension = await resolveIncludeExtension(args.includeExtension)
+	const includeExtension = await resolveIncludeExtension(
+		args.includeExtension,
+		isInteractive
+	)
 	if (p.isCancel(includeExtension)) {
 		p.cancel('Migration cancelled')
 		return
 	}
 
-	const dryRun = await resolveDryRun(args.dryRun)
+	const dryRun = await resolveDryRun(args.dryRun, isInteractive)
 	if (p.isCancel(dryRun)) {
 		p.cancel('Migration cancelled')
 		return
 	}
 
-	await migrateBarrelImports({
-		sourcePath,
-		targetPath,
-		targetGlob: args.targetGlob,
-		ignoreSourceFiles: resolveIgnoreSourceFiles(args.ignoreSourceFiles),
-		ignoreTargetFiles: resolveIgnoreTargetFiles(args.ignoreTargetFiles),
-		includeExtension,
-		includeBarrels: args.includeBarrels ?? defaultOptions.includeBarrels,
-		dryRun,
-		verbosity
-	})
+	try {
+		await migrateBarrelImports({
+			sourcePath,
+			targetPath,
+			targetGlob: args.targetGlob,
+			ignoreSourceFiles: resolveIgnoreSourceFiles(args.ignoreSourceFiles),
+			ignoreTargetFiles: resolveIgnoreTargetFiles(args.ignoreTargetFiles),
+			includeExtension,
+			includeBarrels: args.includeBarrels ?? defaultOptions.includeBarrels,
+			dryRun,
+			verbosity
+		})
+	} catch {
+		// migrateBarrelImports already reported the failure through its logger
+		process.exitCode = 1
+		return
+	}
 
 	if (!isQuiet) {
 		p.outro('Done')
