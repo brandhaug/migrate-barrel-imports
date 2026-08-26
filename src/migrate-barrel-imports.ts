@@ -136,7 +136,7 @@ interface FindImportsParams {
 	targetGlob?: string
 	logger?: Logger
 	ignoreTargetFiles?: string[]
-	sourcePackagePaths?: string[]
+	excludedPackagePaths?: string[]
 	stats?: MigrationStats
 	parseErrors?: ParseError[]
 	skippedFiles?: string[]
@@ -540,7 +540,7 @@ function recordExportFile(
 	const files = exportFiles[name] ?? (exportFiles[name] = [])
 	if (!files.includes(file)) {
 		files.push(file)
-		files.sort()
+		exportFiles[name] = files.toSorted()
 	}
 }
 
@@ -777,7 +777,7 @@ async function findImports({
 	targetGlob,
 	logger = defaultLogger,
 	ignoreTargetFiles = [],
-	sourcePackagePaths = [],
+	excludedPackagePaths = [],
 	parseErrors
 }: FindImportsParams): Promise<FindImportsResult> {
 	try {
@@ -802,11 +802,9 @@ async function findImports({
 			)
 		).flat()
 
-		const excludedSourcePaths = sourcePackagePaths.filter(
-			(directory) => !containsOrEquals(directory, scanDirectories)
-		)
+		const excludedPaths = excludedPackagePaths.map((p) => path.resolve(p))
 		const targetFiles = files.filter(
-			(file) => !isInsideAnyDirectory(file, excludedSourcePaths)
+			(file) => !isInsideAnyDirectory(file, excludedPaths)
 		)
 
 		logger.verbose(`Found ${targetFiles.length} files to scan`)
@@ -906,31 +904,10 @@ async function resolveScanDirectories(
 }
 
 /**
- * Checks whether a directory is, or contains, any of the given scan roots
- *
- * A source package the user explicitly pointed the scan at is still a rewrite
- * target: excluding it would silently drop the directory that was asked for.
- */
-function containsOrEquals(
-	directory: string,
-	scanDirectories: readonly string[]
-): boolean {
-	const resolvedDirectory = path.resolve(directory)
-
-	return scanDirectories.some((scanDirectory) => {
-		const resolvedScan = path.resolve(scanDirectory)
-		return (
-			resolvedScan === resolvedDirectory ||
-			isInsideAnyDirectory(resolvedScan, [resolvedDirectory])
-		)
-	})
-}
-
-/**
  * Checks whether a file lives inside any of the given directories
  *
- * Source directories are never rewrite targets, so their files are filtered out
- * before scanning even when the target path contains them.
+ * The source package whose exports are being migrated is never a rewrite
+ * target, so its own files (self-imports) are filtered out before scanning.
  */
 function isInsideAnyDirectory(
 	filePath: string,
@@ -1333,7 +1310,9 @@ export async function migrateBarrelImports(
 				targetGlob,
 				logger,
 				ignoreTargetFiles,
-				sourcePackagePaths: sourcePackages,
+				// Only self-imports inside this package are excluded; files in
+				// other source packages are legitimate rewrite targets
+				excludedPackagePaths: [packagePath],
 				parseErrors
 			})
 			targetFiles.files.forEach((filePath) => candidateFiles.add(filePath))
