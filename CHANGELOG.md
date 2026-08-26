@@ -1,5 +1,30 @@
 # Changelog
 
+## [4.0.0](https://github.com/brandhaug/migrate-barrel-imports/compare/v3.0.0...v4.0.0) (2026-08-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* files inside the source directories are no longer rewritten, even when target-path contains them.
+
+### Features
+
+* **cli:** add --json flag for machine-readable output ([#40](https://github.com/brandhaug/migrate-barrel-imports/issues/40)) ([bb11307](https://github.com/brandhaug/migrate-barrel-imports/commit/bb113076a3137f24d6ea3de191614c73ed244222))
+* **cli:** add --quiet and --verbose output verbosity control ([#38](https://github.com/brandhaug/migrate-barrel-imports/issues/38)) ([f6ab2c0](https://github.com/brandhaug/migrate-barrel-imports/commit/f6ab2c08bd05f21c1099152645c6c600be6a91c4))
+* **dry-run:** print a diff of changed import statements ([#37](https://github.com/brandhaug/migrate-barrel-imports/issues/37)) ([6d9cfef](https://github.com/brandhaug/migrate-barrel-imports/commit/6d9cfefe0f8fa4c6aa6023b0b20d9e75cd122212))
+* exclude source dirs from target scan and add --target-glob ([#34](https://github.com/brandhaug/migrate-barrel-imports/issues/34)) ([796f706](https://github.com/brandhaug/migrate-barrel-imports/commit/796f70678ad72b310c781ece9d3a72cc3c15fd0f))
+* **migrate:** skip barrel files as rewrite targets by default ([#39](https://github.com/brandhaug/migrate-barrel-imports/issues/39)) ([3aa54d5](https://github.com/brandhaug/migrate-barrel-imports/commit/3aa54d5bb9e5b67ced9e89fdd3b42f51b9f7cc53))
+
+
+### Bug Fixes
+
+* **cli:** validate source-path as a directory and skip prompts without a TTY ([#42](https://github.com/brandhaug/migrate-barrel-imports/issues/42)) ([39ab801](https://github.com/brandhaug/migrate-barrel-imports/commit/39ab801badf1fdc72a4511753636b118f1a08b4d))
+* **detection:** only classify entry points or pure re-export files as barrels ([#33](https://github.com/brandhaug/migrate-barrel-imports/issues/33)) ([11b655e](https://github.com/brandhaug/migrate-barrel-imports/commit/11b655e78e1df49ce386135f4eb7a0376af70b8c))
+* **exports:** deduplicate collected exports and resolve one canonical source ([#36](https://github.com/brandhaug/migrate-barrel-imports/issues/36)) ([9c61db2](https://github.com/brandhaug/migrate-barrel-imports/commit/9c61db2d3bc2a048fb3e06de2e0005b0c2b43721))
+* make migration summary counters internally consistent ([#43](https://github.com/brandhaug/migrate-barrel-imports/issues/43)) ([9a15765](https://github.com/brandhaug/migrate-barrel-imports/commit/9a15765bd75fa8b57250bfbfb27618dd572b499b))
+* **migration:** keep migrating when a file cannot be parsed ([#35](https://github.com/brandhaug/migrate-barrel-imports/issues/35)) ([0184f6e](https://github.com/brandhaug/migrate-barrel-imports/commit/0184f6ea13f223df416e21bf8f7e990b82a3d7fc))
+* **parser:** enable jsx plugin only for .tsx/.jsx files ([#32](https://github.com/brandhaug/migrate-barrel-imports/issues/32)) ([b70c4c0](https://github.com/brandhaug/migrate-barrel-imports/commit/b70c4c0631b0f248465ae84362d7790f938d2e56))
+
 ## [3.0.0](https://github.com/brandhaug/migrate-barrel-imports/compare/v2.1.0...v3.0.0) (2026-08-24)
 
 ### ⚠ BREAKING CHANGES
