@@ -2,10 +2,10 @@
 	"include": ["src/**/*.ts"],
 	"exclude": ["test/**/*", "dist/**/*"],
 	"compilerOptions": {
-		"target": "ES2020",
+		"target": "ES2022",
 		"module": "ES2020",
 		"moduleResolution": "bundler",
-		"lib": ["ES2020"],
+		"lib": ["ES2023"],
 		"outDir": "./dist",
 		"rootDir": "./src",
 		"declaration": true,
