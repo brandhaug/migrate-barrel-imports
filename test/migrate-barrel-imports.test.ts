@@ -1405,7 +1405,7 @@ describe.concurrent('resolveExportSource', (): void => {
 })
 
 describe('migrate-barrel-imports dry-run diff', (): void => {
-	const dryRunSourceExports: Record<string, string> = {
+	const dryRunSourceExports = {
 		'src/utils.ts': `
 export const add = (a: number, b: number): number => a + b;
 `,
@@ -1428,11 +1428,7 @@ export const calculateArea = (radius: number): number => {
 `
 	}
 
-	const setupDryRunFixture = (): {
-		monorepoDir: string
-		sourceDir: string
-		targetFilePath: string
-	} => {
+	const setupDryRunFixture = () => {
 		const { monorepoDir, sourceDir, targetDir } =
 			createTestSetup('dry-run-diff')
 
@@ -1746,7 +1742,7 @@ describe.concurrent('output verbosity', (): void => {
 		expect(output).toContain('Files that could not be parsed: 1')
 	})
 	// Barrel files as rewrite targets
-	const barrelSourceExports: Record<string, string> = {
+	const barrelSourceExports = {
 		'src/utils.ts': `
 export const add = (a: number, b: number): number => a + b;
 `,
@@ -1764,9 +1760,7 @@ export * from "./client";
 export { add, PI } from "@test/source-lib";
 `
 
-	const setupBarrelTarget = (
-		testName: string
-	): { monorepoDir: string; sourceDir: string; barrelPath: string } => {
+	const setupBarrelTarget = (testName: string) => {
 		const { monorepoDir, sourceDir, targetDir } = createTestSetup(testName)
 
 		createPackageJson(sourceDir, '@test/source-lib')

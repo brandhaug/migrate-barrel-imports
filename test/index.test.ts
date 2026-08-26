@@ -11,10 +11,10 @@ const clackMocks = {
 	isCancel: mock((): boolean => false)
 }
 
-mock.module('@clack/prompts', (): object => clackMocks)
+mock.module('@clack/prompts', () => clackMocks)
 
 const migrateBarrelImports = mock(async (): Promise<void> => {})
-mock.module('../src/migrate-barrel-imports', (): object => ({
+mock.module('../src/migrate-barrel-imports', () => ({
 	migrateBarrelImports
 }))
 

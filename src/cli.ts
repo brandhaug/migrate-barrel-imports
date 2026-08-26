@@ -144,12 +144,15 @@ function resolveVerbosityFlag(
 	return undefined
 }
 
-function extractNegations(argv: readonly string[]): {
+/** Positionals and negation flags pulled out of argv before parseArgs runs. */
+interface NegatedFlags {
 	args: string[]
 	noExtension: boolean
 	noIncludeBarrels: boolean
 	noDryRun: boolean
-} {
+}
+
+function extractNegations(argv: readonly string[]): NegatedFlags {
 	const args: string[] = []
 	let noExtension = false
 	let noIncludeBarrels = false

@@ -197,11 +197,6 @@ interface UpdateImportsParams {
 /** Logger used when a caller does not supply one. */
 const defaultLogger: Logger = createLogger({ verbosity: 'normal' })
 
-/** Renders an unknown thrown value as a log-friendly string. */
-function formatError(error: unknown): string {
-	return error instanceof Error ? error.message : String(error)
-}
-
 /**
  * Records a file that could not be parsed so the migration can skip it and carry on
  */
@@ -282,30 +277,67 @@ const ENTRY_POINT_FILE_NAME_PATTERN =
 	/^index\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)$/
 
 /**
+ * A package.json entry-point declaration. `exports` is a recursive
+ * string/array/object tree; `main` and `module` are plain strings.
+ */
+type EntryPointSpec =
+	| string
+	| EntryPointSpec[]
+	| { [subpath: string]: EntryPointSpec }
+
+/** Fields in package.json that may declare an entry-point file. */
+const ENTRY_POINT_FIELDS = ['main', 'module', 'exports'] as const
+
+interface PackageManifest {
+	main?: EntryPointSpec
+	module?: EntryPointSpec
+	exports?: EntryPointSpec
+}
+
+/**
  * Collects the entry-point file paths a package declares via main, module and exports
  */
 async function getPackageEntryPoints(packagePath: string): Promise<string[]> {
 	try {
-		const manifest: Record<string, unknown> = JSON.parse(
+		const manifest: PackageManifest = JSON.parse(
 			await readFile(path.join(packagePath, 'package.json'), 'utf8')
 		)
 
 		const entries: string[] = []
-		const collect = (value: unknown): void => {
-			if (typeof value === 'string') {
-				entries.push(path.resolve(packagePath, value))
-				return
-			}
-			if (typeof value === 'object' && value !== null) {
-				Object.values(value).forEach(collect)
+		for (const field of ENTRY_POINT_FIELDS) {
+			const spec = manifest[field]
+			if (spec !== undefined) {
+				collectEntryPointSpecs(spec, packagePath, entries)
 			}
 		}
-
-		;[manifest.main, manifest.module, manifest.exports].forEach(collect)
 
 		return entries
 	} catch {
 		return []
+	}
+}
+
+/**
+ * Collects the file paths declared by an entry-point spec. A string is a
+ * direct entry point; arrays and objects (subpath/condition maps) recurse.
+ */
+function collectEntryPointSpecs(
+	spec: EntryPointSpec,
+	packagePath: string,
+	entries: string[]
+): void {
+	if (typeof spec === 'string') {
+		entries.push(path.resolve(packagePath, spec))
+		return
+	}
+	if (Array.isArray(spec)) {
+		for (const item of spec) {
+			collectEntryPointSpecs(item, packagePath, entries)
+		}
+		return
+	}
+	for (const item of Object.values(spec)) {
+		collectEntryPointSpecs(item, packagePath, entries)
 	}
 }
 
@@ -863,7 +895,11 @@ async function findImports({
 
 		return { files: uniqueFiles, skipped }
 	} catch (error) {
-		logger.error(`Error finding imports: ${formatError(error)}`)
+		logger.error(
+			`Error finding imports: ${
+				error instanceof Error ? error.message : String(error)
+			}`
+		)
 		return { files: [], skipped: [] }
 	}
 }
@@ -1412,7 +1448,11 @@ export async function migrateBarrelImports(
 			skippedFiles: [...skippedFiles].toSorted()
 		}
 	} catch (error) {
-		logger.error(`Error during migration: ${formatError(error)}`)
+		logger.error(
+			`Error during migration: ${
+				error instanceof Error ? error.message : String(error)
+			}`
+		)
 		throw error
 	}
 }
@@ -1425,9 +1465,11 @@ export async function migrateBarrelImports(
  */
 async function getPackageName(packagePath: string): Promise<string | null> {
 	const packageJsonPath = path.join(packagePath, 'package.json')
-	const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8'))
-	return typeof packageJson.name === 'string' && packageJson.name.length > 0
-		? packageJson.name
+	const manifest: { name?: unknown } = JSON.parse(
+		await readFile(packageJsonPath, 'utf8')
+	)
+	return typeof manifest.name === 'string' && manifest.name.length > 0
+		? manifest.name
 		: null
 }
 

@@ -1,6 +1,14 @@
 {
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
 	"plugins": ["typescript", "unicorn", "oxc", "import"],
+	"jsPlugins": [
+		{
+			// Anti-slop rules vendored in ultracite, loaded the same way b2b-saas-starter
+			// does. The plugin is copy-the-source, not published to npm.
+			"name": "anti-slop",
+			"specifier": "./node_modules/ultracite/config/oxlint/anti-slop/plugin.mjs"
+		}
+	],
 	"categories": {
 		// Strict everywhere. `pedantic` stays off: its per-function line limits
 		// and max-dependencies are not worth policing for a small CLI.
@@ -264,7 +272,28 @@
 		"import/no-mutable-exports": "error",
 		"import/no-named-as-default": "error",
 		"import/no-self-import": "error",
-		"import/no-unassigned-import": "error"
+		"import/no-unassigned-import": "error",
+
+		// Anti-slop rules from ultracite, mirroring the b2b-saas-starter set.
+		"anti-slop/no-chained-type-assertions": "error",
+		"anti-slop/no-conditional-empty-object-spread": "error",
+		"anti-slop/no-known-value-widening": "error",
+		"anti-slop/no-module-mocking": "error",
+		"anti-slop/no-object-parameters": "error",
+		"anti-slop/no-reflect-apply": "error",
+		"anti-slop/no-reflect-get": "error",
+		// Off: this is a plain-TS CLI with no schema library; package.json
+		// manifests and thrown errors are the only unknown data, and decoding
+		// them is a recursive string/array/object walk where `typeof` is the
+		// only discriminator. A type-guard exemption cannot cover the walk.
+		"anti-slop/no-runtime-typeof": "off",
+		"anti-slop/no-shape-in-symbol-names": "error",
+		"anti-slop/no-unknown-parameters": "error",
+		"anti-slop/no-unknown-returns": "error",
+		"anti-slop/no-unknown-type-aliases": "error",
+		"anti-slop/no-unsafe-dictionary-type": "error",
+		"anti-slop/no-widen-then-assert": "error",
+		"anti-slop/require-safety-comment-for-type-assertion": "error"
 	},
 	"overrides": [
 		{

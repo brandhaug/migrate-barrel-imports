@@ -144,9 +144,7 @@ describe('cli help', (): void => {
 	})
 })
 
-const createCliFixture = (
-	testName: string
-): { monorepoDir: string; sourceDir: string; targetFilePath: string } => {
+const createCliFixture = (testName: string) => {
 	const monorepoDir = path.join(
 		process.env.RUNNER_TEMP || os.tmpdir(),
 		`test-${testName}-${randomUUID()}`
