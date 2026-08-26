@@ -15,7 +15,7 @@
  * 4. Preserves original import names and types
  */
 
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import _generate from '@babel/generator'
 import { parse } from '@babel/parser'
@@ -1411,14 +1411,51 @@ async function findSourcePackages(
 
 	logger.verbose(`Looking for source packages in: ${resolvedPath}`)
 
+	await assertSourceDirectory(sourcePath, resolvedPath)
+
 	const packageJsonFiles = await fg('{package.json,**/package.json}', {
 		cwd: resolvedPath,
 		ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'],
 		absolute: true
 	})
 
+	if (packageJsonFiles.length === 0) {
+		throw new Error(
+			`No package.json files found in: ${resolvedPath}. source-path must be a directory containing packages; it is searched recursively, ignoring node_modules, dist and build (given: ${sourcePath}).`
+		)
+	}
+
 	logger.verbose(`Found ${packageJsonFiles.length} package.json files:`)
 	packageJsonFiles.forEach((file) => logger.verbose(`  - ${file}`))
 
 	return packageJsonFiles.map((file) => path.dirname(file))
+}
+
+/**
+ * Ensures the source path points at an existing directory.
+ *
+ * `source-path` is a directory that is scanned recursively for `package.json`
+ * files, not a glob, so a pattern such as `packages/*` resolves to nothing.
+ *
+ * @param {string} sourcePath - Source path as given by the caller
+ * @param {string} resolvedPath - Absolute source path
+ * @returns {Promise<void>}
+ */
+async function assertSourceDirectory(
+	sourcePath: string,
+	resolvedPath: string
+): Promise<void> {
+	const stats = await stat(resolvedPath).catch(() => undefined)
+
+	if (stats === undefined) {
+		throw new Error(
+			`Source path does not exist: ${resolvedPath}. source-path must be a directory containing packages, not a glob pattern (given: ${sourcePath}).`
+		)
+	}
+
+	if (!stats.isDirectory()) {
+		throw new Error(
+			`Source path is not a directory: ${resolvedPath}. source-path must be a directory containing packages (given: ${sourcePath}).`
+		)
+	}
 }

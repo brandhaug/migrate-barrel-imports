@@ -4,7 +4,7 @@ import type { Options } from '../src/options'
 const clackMocks = {
 	intro: mock((): void => {}),
 	outro: mock((): void => {}),
-	log: { info: mock((): void => {}) },
+	log: { info: mock((): void => {}), error: mock((): void => {}) },
 	cancel: mock((): void => {}),
 	text: mock((): string | Promise<string> => ''),
 	confirm: mock((): boolean | Promise<boolean> => false),
@@ -75,6 +75,7 @@ describe('index', (): void => {
 		migrateBarrelImports.mockImplementation(async (): Promise<void> => {})
 		clackMocks.isCancel.mockReturnValue(false)
 		clackMocks.cancel.mockClear()
+		clackMocks.log.error.mockClear()
 	})
 
 	it('should pass collected prompt values to migrateBarrelImports', async (): Promise<void> => {
@@ -84,7 +85,7 @@ describe('index', (): void => {
 			dryRun: true
 		})
 
-		await main()
+		await main(undefined, { isInteractive: true })
 
 		const options: Options = {
 			sourcePath: 'libs/*',
@@ -107,16 +108,19 @@ describe('index', (): void => {
 			dryRun: true
 		})
 
-		await main([
-			'libs/*',
-			'cli-target-dir',
-			'--no-extension',
-			'--dry-run',
-			'--ignore-source-files',
-			'**/*.test.ts, **/node_modules/**',
-			'--ignore-target-files',
-			'**/*.spec.ts, **/dist/**'
-		])
+		await main(
+			[
+				'libs/*',
+				'cli-target-dir',
+				'--no-extension',
+				'--dry-run',
+				'--ignore-source-files',
+				'**/*.test.ts, **/node_modules/**',
+				'--ignore-target-files',
+				'**/*.spec.ts, **/dist/**'
+			],
+			{ isInteractive: true }
+		)
 
 		const options: Options = {
 			sourcePath: 'libs/*',
@@ -137,7 +141,7 @@ describe('index', (): void => {
 	it('should fall back to default options when prompts are left empty', async (): Promise<void> => {
 		mockAnswers()
 
-		await main()
+		await main(undefined, { isInteractive: true })
 
 		const options: Options = {
 			sourcePath: 'libs/*',
@@ -157,10 +161,61 @@ describe('index', (): void => {
 		mockAnswers()
 		clackMocks.isCancel.mockReturnValue(true)
 
-		await main()
+		await main(undefined, { isInteractive: true })
 
 		expect(migrateBarrelImports).not.toHaveBeenCalled()
 		expect(clackMocks.cancel).toHaveBeenCalledWith('Migration cancelled')
+	})
+
+	it('should not prompt and should default the extension when stdin is not a TTY', async (): Promise<void> => {
+		mockAnswers()
+
+		await main(['libs/*'], { isInteractive: false })
+
+		const options: Options = {
+			sourcePath: 'libs/*',
+			targetPath: '.',
+			ignoreSourceFiles: [],
+			ignoreTargetFiles: [],
+			includeExtension: true,
+			includeBarrels: false,
+			dryRun: false,
+			verbosity: 'normal'
+		}
+
+		expect(migrateBarrelImports).toHaveBeenCalledWith(options)
+		expect(clackMocks.text).not.toHaveBeenCalled()
+		expect(clackMocks.confirm).not.toHaveBeenCalled()
+	})
+
+	it('should fail instead of prompting when no source path is given and stdin is not a TTY', async (): Promise<void> => {
+		mockAnswers()
+		const previousExitCode = process.exitCode
+
+		await main([], { isInteractive: false })
+
+		expect(migrateBarrelImports).not.toHaveBeenCalled()
+		expect(clackMocks.text).not.toHaveBeenCalled()
+		expect(clackMocks.log.error).toHaveBeenCalledWith(
+			'source-path is required when stdin is not a TTY. Pass it as the first argument, e.g. migrate-barrel-imports packages .'
+		)
+		expect(process.exitCode).toBe(1)
+
+		process.exitCode = previousExitCode ?? 0
+	})
+
+	it('should exit with code 1 instead of throwing when the migration fails', async (): Promise<void> => {
+		mockAnswers()
+		const previousExitCode = process.exitCode
+		migrateBarrelImports.mockImplementation(async (): Promise<void> => {
+			throw new Error('Source path does not exist: /tmp/packages/*')
+		})
+
+		await main(['packages/*'], { isInteractive: false })
+
+		expect(process.exitCode).toBe(1)
+
+		process.exitCode = previousExitCode ?? 0
 	})
 
 	it('should treat an empty source path as invalid', async (): Promise<void> => {
@@ -180,7 +235,7 @@ describe('index', (): void => {
 			}
 		)
 
-		await main()
+		await main(undefined, { isInteractive: true })
 
 		expect(validationError).toBe('Source path is required')
 	})

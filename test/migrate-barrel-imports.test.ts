@@ -2148,3 +2148,44 @@ describe.concurrent('target scan scope', (): void => {
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
 	})
 })
+
+describe('source path validation', (): void => {
+	it('fails with a clear error when the source path does not exist', async (): Promise<void> => {
+		const missingPath = path.join(
+			process.env.RUNNER_TEMP || os.tmpdir(),
+			`missing-${randomUUID()}`
+		)
+
+		await expect(
+			runMigrateBarrelImports({ sourcePath: missingPath })
+		).rejects.toThrow(`Source path does not exist: ${missingPath}`)
+	})
+
+	it('fails with a clear error when the source path contains no package.json files', async (): Promise<void> => {
+		const emptyPath = path.join(
+			process.env.RUNNER_TEMP || os.tmpdir(),
+			`empty-${randomUUID()}`
+		)
+		fs.mkdirSync(emptyPath, { recursive: true })
+
+		await expect(
+			runMigrateBarrelImports({ sourcePath: emptyPath })
+		).rejects.toThrow(`No package.json files found in: ${emptyPath}`)
+
+		fs.rmSync(emptyPath, { recursive: true, force: true })
+	})
+
+	it('fails with a clear error when the source path is a file', async (): Promise<void> => {
+		const filePath = path.join(
+			process.env.RUNNER_TEMP || os.tmpdir(),
+			`file-${randomUUID()}.json`
+		)
+		fs.writeFileSync(filePath, '{}')
+
+		await expect(
+			runMigrateBarrelImports({ sourcePath: filePath })
+		).rejects.toThrow(`Source path is not a directory: ${filePath}`)
+
+		fs.rmSync(filePath, { force: true })
+	})
+})

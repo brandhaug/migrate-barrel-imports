@@ -243,6 +243,19 @@ describe('cli --json', (): void => {
 		expect(stderr).toContain('--json requires source-path')
 	})
 
+	it('exits with an error on stderr when the source path is not a directory', async () => {
+		const { stdout, stderr, exitCode } = await runCli([
+			'packages/*',
+			'.',
+			'--json'
+		])
+
+		expect(exitCode).toBe(1)
+		expect(stdout).toBe('')
+		expect(stderr).toContain('Source path does not exist')
+		expect(stderr).not.toContain('at async')
+	})
+
 	it('keeps stdout parseable when a target file fails to parse', async () => {
 		const { monorepoDir, sourceDir } = createCliFixture('cli-json-warnings')
 		const brokenFilePath = path.join(
