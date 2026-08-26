@@ -7,6 +7,7 @@ describe('parseCliArgs', (): void => {
 			sourcePath: 'packages/*',
 			targetPath: 'apps/web',
 			includeExtension: undefined,
+			includeBarrels: undefined,
 			dryRun: undefined,
 			ignoreSourceFiles: undefined,
 			ignoreTargetFiles: undefined,
@@ -19,6 +20,7 @@ describe('parseCliArgs', (): void => {
 			sourcePath: undefined,
 			targetPath: undefined,
 			includeExtension: undefined,
+			includeBarrels: undefined,
 			dryRun: undefined,
 			ignoreSourceFiles: undefined,
 			ignoreTargetFiles: undefined,
@@ -77,5 +79,12 @@ describe('parseCliArgs', (): void => {
 
 	it('prefers --verbose when combined with --quiet', (): void => {
 		expect(parseCliArgs(['--quiet', '--verbose']).verbosity).toBe('verbose')
+	})
+	it('parses --include-barrels', (): void => {
+		expect(parseCliArgs(['--include-barrels']).includeBarrels).toBe(true)
+	})
+
+	it('parses --no-include-barrels', (): void => {
+		expect(parseCliArgs(['--no-include-barrels']).includeBarrels).toBe(false)
 	})
 })

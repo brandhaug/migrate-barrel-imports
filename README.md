@@ -26,6 +26,7 @@ import { bar } from '@repo/package/src/bar'
 - Automatic resolution of re-exported symbols to their source files
 - Configurable file ignore patterns for both source and target directories
 - Optional file extension stripping for bundler-friendly imports
+- Barrel files are skipped as rewrite targets, so a package's public API surface stays intact
 
 ## Installation
 
@@ -61,6 +62,7 @@ npx migrate-barrel-imports <source-path> [target-path] [options]
 | Option                             | Description                                                   | Default       |
 | ---------------------------------- | ------------------------------------------------------------- | ------------- |
 | `--extension` / `--no-extension`   | Include file extensions in rewritten import paths             | `--extension` |
+| `--include-barrels`                | Also rewrite imports and re-exports inside barrel files       | off           |
 | `--ignore-source-files <patterns>` | Comma-separated file patterns to ignore in source directories | _(none)_      |
 | `--ignore-target-files <patterns>` | Comma-separated file patterns to ignore in target directories | _(none)_      |
 | `--dry-run`                        | Preview changes as a diff without modifying files             | off           |
@@ -77,6 +79,18 @@ flooding the terminal.
 When arguments or flags are omitted, the CLI falls back to interactive prompts
 for the missing values only. Supplying the source path (and any flags) runs the
 migration fully non-interactive, which makes it usable in scripts and CI.
+
+### Barrel files as targets
+
+Barrel files are never rewritten by default. Rewriting the `export ... from`
+statements inside a package's own `src/index.ts` changes what that package
+exposes, which silently breaks its public API. A target file counts as a barrel
+when it re-exports and is either named like an entry point (`index.*`), declared
+as one in its `package.json`, or made almost entirely of re-exports. Skipped
+barrels are counted in the run summary under `Target files skipped`, and named
+individually under `--verbose`.
+
+Pass `--include-barrels` to opt in and rewrite them anyway.
 
 ### Dry run
 
@@ -106,6 +120,9 @@ migrate-barrel-imports "libs/*" --no-extension
 
 # Print only the migration summary
 migrate-barrel-imports "libs/*" --quiet
+
+# Also rewrite the re-exports inside barrel files
+migrate-barrel-imports "libs/*" --include-barrels
 
 # Migrate specific packages
 migrate-barrel-imports "packages/{ui,core,utils}" --ignore-target-files "**/*.test.ts"

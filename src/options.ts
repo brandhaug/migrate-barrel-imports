@@ -5,6 +5,7 @@
  * @property {string[]} ignoreSourceFiles - Patterns to ignore when scanning source files
  * @property {string[]} ignoreTargetFiles - Patterns to ignore when scanning target files
  * @property {boolean} [includeExtension] - Whether to include file extensions in imports
+ * @property {boolean} [includeBarrels] - Whether to rewrite imports inside barrel files as well
  * @property {Verbosity} [verbosity] - How much output the migration prints
  */
 import type { Verbosity } from './logger.js'
@@ -15,6 +16,7 @@ export type Options = {
 	ignoreSourceFiles: string[]
 	ignoreTargetFiles: string[]
 	includeExtension?: boolean
+	includeBarrels?: boolean
 	dryRun?: boolean
 	verbosity?: Verbosity
 }
@@ -24,5 +26,6 @@ export const defaultOptions: Omit<Options, 'sourcePath'> = {
 	ignoreSourceFiles: [],
 	ignoreTargetFiles: [],
 	includeExtension: false,
+	includeBarrels: false,
 	verbosity: 'normal'
 }

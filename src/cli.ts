@@ -13,13 +13,14 @@ export type CliArgs = Partial<Omit<Options, 'targetPath'>> & {
  * Parses command-line arguments into partial migration options.
  *
  * Supports two positionals (`source-path` and optional `target-path`) plus flags:
- * `--extension` / `--no-extension`, `--ignore-source-files <patterns>`,
- * `--ignore-target-files <patterns>`, `--dry-run`.
+ * `--extension` / `--no-extension`, `--include-barrels` / `--no-include-barrels`,
+ * `--ignore-source-files <patterns>`, `--ignore-target-files <patterns>`, `--dry-run`.
  */
 export function parseCliArgs(argv: readonly string[]): CliArgs {
 	const {
 		args: withoutNegation,
 		noExtension,
+		noIncludeBarrels,
 		noDryRun
 	} = extractNegations(argv)
 	const { values, positionals } = parseArgs({
@@ -31,6 +32,12 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
 				default: undefined,
 				description:
 					'Include js|jsx|ts|tsx|mjs|cjs file extensions in import statements'
+			},
+			'include-barrels': {
+				type: 'boolean',
+				default: undefined,
+				description:
+					'Also rewrite imports inside barrel files (index files of re-exports)'
 			},
 			'ignore-source-files': {
 				type: 'string',
@@ -71,6 +78,8 @@ Positionals:
 
 Options:
   --extension / --no-extension     Include file extensions in imports
+  --include-barrels / --no-include-barrels
+                                   Also rewrite imports inside barrel files (skipped by default)
   --ignore-source-files <patterns> Comma-separated patterns to ignore in source dirs
   --ignore-target-files <patterns> Comma-separated patterns to ignore in target dirs
   --dry-run / --no-dry-run       Preview changes without modifying files
@@ -84,6 +93,8 @@ Options:
 		sourcePath: positionals[0],
 		targetPath: positionals[1],
 		includeExtension: values.extension ?? (noExtension ? false : undefined),
+		includeBarrels:
+			values['include-barrels'] ?? (noIncludeBarrels ? false : undefined),
 		dryRun: noDryRun ? false : values['dry-run'],
 		ignoreSourceFiles: splitPatterns(values['ignore-source-files']),
 		ignoreTargetFiles: splitPatterns(values['ignore-target-files']),
@@ -109,14 +120,18 @@ function resolveVerbosityFlag(
 function extractNegations(argv: readonly string[]): {
 	args: string[]
 	noExtension: boolean
+	noIncludeBarrels: boolean
 	noDryRun: boolean
 } {
 	const args: string[] = []
 	let noExtension = false
+	let noIncludeBarrels = false
 	let noDryRun = false
 
 	for (const arg of argv) {
-		if (arg === '--no-extension') {
+		if (arg === '--no-include-barrels') {
+			noIncludeBarrels = true
+		} else if (arg === '--no-extension') {
 			noExtension = true
 		} else if (arg === '--no-dry-run') {
 			noDryRun = true
@@ -125,7 +140,7 @@ function extractNegations(argv: readonly string[]): {
 		}
 	}
 
-	return { args, noExtension, noDryRun }
+	return { args, noExtension, noIncludeBarrels, noDryRun }
 }
 
 function splitPatterns(value: string | undefined): string[] | undefined {
@@ -251,6 +266,7 @@ export async function main(
 		ignoreSourceFiles: resolveIgnoreSourceFiles(args.ignoreSourceFiles),
 		ignoreTargetFiles: resolveIgnoreTargetFiles(args.ignoreTargetFiles),
 		includeExtension,
+		includeBarrels: args.includeBarrels ?? defaultOptions.includeBarrels,
 		dryRun,
 		verbosity
 	})

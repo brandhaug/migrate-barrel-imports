@@ -24,6 +24,8 @@ import _traverse from '@babel/traverse'
 import {
 	type ExportDefaultDeclaration,
 	type ExportNamedDeclaration,
+	exportNamedDeclaration,
+	type ExportSpecifier,
 	type ImportDeclaration,
 	type ImportDefaultSpecifier,
 	type ImportNamespaceSpecifier,
@@ -37,8 +39,6 @@ import {
 	isFunctionDeclaration,
 	isIdentifier,
 	isImportDeclaration,
-	isImportDefaultSpecifier,
-	isImportNamespaceSpecifier,
 	isImportSpecifier,
 	isTSEnumDeclaration,
 	isTSInterfaceDeclaration,
@@ -387,6 +387,95 @@ export function resolveExportSource({
 }
 
 /**
+ * Result of resolving an imported or re-exported name to a direct source path
+ *
+ * - `move`: the name resolves to `sourcePath` and should be rewritten
+ * - `keep`: the name should stay pointing at the barrel package
+ * - `drop`: the name is not exported by the package
+ * - `unresolved`: the name is exported but no source file could be determined
+ */
+type ResolvedTarget =
+	| { kind: 'move'; sourcePath: string; dedupeAliased: boolean }
+	| { kind: 'keep' }
+	| { kind: 'drop' }
+	| { kind: 'unresolved' }
+
+interface ResolveTargetParams {
+	name: string
+	exports: ExportInfo[]
+	packageName: string
+	includeExtension: boolean
+}
+
+/**
+ * Builds a package-qualified import path for a file inside the source package
+ */
+function toPackagePath(
+	packageName: string,
+	sourceFile: string,
+	includeExtension: boolean
+): string {
+	return includeExtension
+		? `${packageName}/${sourceFile}`
+		: `${packageName}/${sourceFile.replace(/\.[^/.]+$/, '')}`
+}
+
+/**
+ * Resolves a single name to the direct source path it should be imported or
+ * re-exported from. Shared by `import ... from` and `export ... from` rewriting.
+ *
+ * @param {ResolveTargetParams} params - Name and collected package exports
+ * @returns {ResolvedTarget} What should happen to the specifier
+ */
+function resolveTarget({
+	name,
+	exports,
+	packageName,
+	includeExtension
+}: ResolveTargetParams): ResolvedTarget {
+	const exportInfo = exports.find((e) => e.exports.includes(name))
+	if (!exportInfo) return { kind: 'drop' }
+	if (exportInfo.isIgnored) return { kind: 'keep' }
+
+	// Re-exports from an external package keep pointing at that package
+	const reExportSource = exportInfo.reExports?.[name]
+	if (reExportSource && !reExportSource.startsWith('.')) {
+		return { kind: 'move', sourcePath: reExportSource, dedupeAliased: false }
+	}
+
+	// Direct exports declared in the package entry point
+	if (exportInfo.source === 'src/index.ts' && !reExportSource) {
+		if (exportInfo.defaultExportNames?.includes(name)) {
+			return { kind: 'move', sourcePath: packageName, dedupeAliased: false }
+		}
+
+		if (name !== 'default') {
+			return {
+				kind: 'move',
+				sourcePath: toPackagePath(
+					packageName,
+					exportInfo.source,
+					includeExtension
+				),
+				dedupeAliased: false
+			}
+		}
+	}
+
+	// Resolve the single canonical source file for this export
+	const bestSourceFile = resolveExportSource({ name, exports })
+	if (bestSourceFile) {
+		return {
+			kind: 'move',
+			sourcePath: toPackagePath(packageName, bestSourceFile, includeExtension),
+			dedupeAliased: true
+		}
+	}
+
+	return { kind: 'unresolved' }
+}
+
+/**
  * Records that a file exports a name, keeping each file listed at most once
  *
  * @param {Record<string, string[]>} exportFiles - Map of export names to files
@@ -672,14 +761,20 @@ async function findImports({
 				const content = await readFile(file, 'utf-8')
 				const ast = parse(content, getBabelConfig(file))
 
+				const matchesPackage = (source: string): boolean =>
+					source === packageName || source.startsWith(`${packageName}/`)
+
 				traverse(ast, {
 					ImportDeclaration(path: NodePath<ImportDeclaration>) {
-						const source = path.node.source.value
 						// Check for exact package import or subpath import
-						if (
-							source === packageName ||
-							source.startsWith(`${packageName}/`)
-						) {
+						if (matchesPackage(path.node.source.value)) {
+							allFiles.add(file)
+						}
+					},
+					ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
+						// `export { x } from "<package>"` is a barrel import too
+						const source = path.node.source
+						if (source && matchesPackage(source.value)) {
 							allFiles.add(file)
 						}
 					}
@@ -757,135 +852,63 @@ async function updateImports({
 		> = []
 
 		for (const declaration of importDeclarations) {
-			const specifiers = declaration.specifiers
+			for (const specifier of declaration.specifiers) {
+				if (!isImportSpecifier(specifier)) continue
 
-			for (const specifier of specifiers) {
-				if (isImportSpecifier(specifier)) {
-					const imported = specifier.imported
-					const importName = isIdentifier(imported)
-						? imported.name
-						: imported.value
-					const exportInfo = exports.find((e) => e.exports.includes(importName))
+				const imported = specifier.imported
+				const importName = isIdentifier(imported)
+					? imported.name
+					: imported.value
+				const resolved = resolveTarget({
+					name: importName,
+					exports,
+					packageName,
+					includeExtension
+				})
 
-					if (exportInfo) {
-						if (exportInfo.isIgnored) {
-							remainingSpecifiers.push(specifier)
-							continue
-						}
+				if (resolved.kind === 'drop') continue
 
-						// Check if this is a re-export from an external package
-						if (exportInfo.reExports?.[importName]) {
-							const reExportSource = exportInfo.reExports[importName]
-							if (!reExportSource.startsWith('.')) {
-								// Keep the original import from the external package
-								const sourcePath = reExportSource
-								if (!importsBySource.has(sourcePath)) {
-									importsBySource.set(sourcePath, [])
-								}
-								importsBySource.get(sourcePath)?.push({
-									local: specifier.local,
-									imported: specifier.imported
-								})
-								modified = true
-								continue
-							}
-						}
-
-						// Then check if it's a direct export from index.ts
-						if (
-							exportInfo.source === 'src/index.ts' &&
-							exportInfo.exports.includes(importName) &&
-							!exportInfo.reExports?.[importName]
-						) {
-							// Handle entities that are exported as default
-							const isDefaultExportedEntity =
-								exportInfo.defaultExportNames?.includes(importName)
-
-							if (isDefaultExportedEntity) {
-								// For entities that are exported as default, import directly from the package
-								const sourcePath = packageName
-								if (!importsBySource.has(sourcePath)) {
-									importsBySource.set(sourcePath, [])
-								}
-								importsBySource.get(sourcePath)?.push({
-									local: specifier.local,
-									imported: specifier.imported
-								})
-								modified = true
-								continue
-							}
-
-							// Check if this is a named export or default export
-							if (importName !== 'default') {
-								// For each named export from index.ts, create a separate import source path
-								const sourcePath = includeExtension
-									? `${packageName}/${exportInfo.source}`
-									: `${packageName}/${exportInfo.source.replace(/\.[^/.]+$/, '')}`
-
-								if (!importsBySource.has(sourcePath)) {
-									importsBySource.set(sourcePath, [])
-								}
-								importsBySource.get(sourcePath)?.push({
-									local: specifier.local,
-									imported: specifier.imported
-								})
-								modified = true
-								continue
-							}
-						}
-
-						// Resolve the single canonical source file for this export
-						const bestSourceFile = resolveExportSource({
-							name: importName,
-							exports
-						})
-
-						if (bestSourceFile) {
-							const sourcePath = includeExtension
-								? `${packageName}/${bestSourceFile}`
-								: `${packageName}/${bestSourceFile.replace(/\.[^/.]+$/, '')}`
-
-							// Check if this import is aliased and if we already have the original import
-							const isAliased = specifier.local.name !== importName
-							const hasOriginalImport = Array.from(
-								importsBySource.values()
-							).some((specs) =>
-								specs.some(
-									(spec) =>
-										spec.imported &&
-										isIdentifier(spec.imported) &&
-										spec.imported.name === importName
-								)
-							)
-
-							// Only add the import if it's not aliased or if we don't have the original import yet
-							if (!isAliased || !hasOriginalImport) {
-								if (!importsBySource.has(sourcePath)) {
-									importsBySource.set(sourcePath, [])
-								}
-								importsBySource.get(sourcePath)?.push({
-									local: specifier.local,
-									imported: specifier.imported
-								})
-								modified = true
-							}
-							continue
-						}
-
-						// Could not resolve this import to a source file
-						if (warnings) {
-							warnings.push(
-								`Could not resolve "${importName}" to a source file in ${filePath}`
-							)
-						}
-						remainingSpecifiers.push(specifier)
-					} else if (
-						isImportDefaultSpecifier(specifier) ||
-						isImportNamespaceSpecifier(specifier)
-					) {
-						remainingSpecifiers.push(specifier)
-					}
+				if (resolved.kind === 'keep') {
+					remainingSpecifiers.push(specifier)
+					continue
 				}
+
+				if (resolved.kind === 'unresolved') {
+					// Could not resolve this import to a source file
+					if (warnings) {
+						warnings.push(
+							`Could not resolve "${importName}" to a source file in ${filePath}`
+						)
+					}
+					remainingSpecifiers.push(specifier)
+					continue
+				}
+
+				if (resolved.dedupeAliased) {
+					// Check if this import is aliased and if we already have the original import
+					const isAliased = specifier.local.name !== importName
+					const hasOriginalImport = Array.from(importsBySource.values()).some(
+						(specs) =>
+							specs.some(
+								(spec) =>
+									spec.imported &&
+									isIdentifier(spec.imported) &&
+									spec.imported.name === importName
+							)
+					)
+
+					// Only add the import if it is not aliased or if we do not have the original import yet
+					if (isAliased && hasOriginalImport) continue
+				}
+
+				if (!importsBySource.has(resolved.sourcePath)) {
+					importsBySource.set(resolved.sourcePath, [])
+				}
+				importsBySource.get(resolved.sourcePath)?.push({
+					local: specifier.local,
+					imported: specifier.imported
+				})
+				modified = true
 			}
 		}
 
@@ -929,6 +952,85 @@ async function updateImports({
 		if (newImports.length > 0) {
 			ast.program.body.unshift(...newImports)
 			modified = true
+		}
+
+		// Third pass: rewrite `export ... from "<package>"` re-exports
+		const reExportPaths: Array<NodePath<ExportNamedDeclaration>> = []
+		traverse(ast, {
+			ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
+				const source = path.node.source
+				if (source?.value.startsWith(packageName)) {
+					reExportPaths.push(path)
+				}
+			}
+		})
+
+		for (const reExportPath of reExportPaths) {
+			const node = reExportPath.node
+			const exportsBySource = new Map<string, ExportSpecifier[]>()
+			const remainingExportSpecifiers: ExportNamedDeclaration['specifiers'] = []
+			let movedCount = 0
+
+			for (const specifier of node.specifiers) {
+				if (!isExportSpecifier(specifier)) {
+					remainingExportSpecifiers.push(specifier)
+					continue
+				}
+
+				const exportName = specifier.local.name
+				const resolved = resolveTarget({
+					name: exportName,
+					exports,
+					packageName,
+					includeExtension
+				})
+
+				if (resolved.kind === 'unresolved' && warnings) {
+					warnings.push(
+						`Could not resolve "${exportName}" to a source file in ${filePath}`
+					)
+				}
+
+				if (resolved.kind !== 'move') {
+					remainingExportSpecifiers.push(specifier)
+					continue
+				}
+
+				if (!exportsBySource.has(resolved.sourcePath)) {
+					exportsBySource.set(resolved.sourcePath, [])
+				}
+				exportsBySource.get(resolved.sourcePath)?.push(specifier)
+				movedCount++
+			}
+
+			if (movedCount === 0) continue
+
+			const replacements: ExportNamedDeclaration[] = []
+			for (const [source, specifiers] of exportsBySource) {
+				const declaration = exportNamedDeclaration(
+					null,
+					specifiers,
+					stringLiteral(source)
+				)
+				declaration.exportKind = node.exportKind
+				replacements.push(declaration)
+			}
+
+			if (remainingExportSpecifiers.length > 0) {
+				const declaration = exportNamedDeclaration(
+					null,
+					remainingExportSpecifiers,
+					stringLiteral(node.source?.value ?? packageName)
+				)
+				declaration.exportKind = node.exportKind
+				replacements.push(declaration)
+			}
+
+			reExportPath.replaceWithMultiple(replacements)
+			modified = true
+			if (stats) {
+				stats.importsMigrated += movedCount
+			}
 		}
 
 		if (modified) {
@@ -989,6 +1091,7 @@ export async function migrateBarrelImports(
 		targetPath,
 		ignoreTargetFiles,
 		includeExtension = true,
+		includeBarrels = false,
 		dryRun = false
 	} = options
 
@@ -1069,6 +1172,19 @@ export async function migrateBarrelImports(
 
 			// Update imports in target files
 			for (const filePath of targetFiles) {
+				// Rewriting a barrel's own re-exports changes what its package
+				// exposes, so barrels are left alone unless explicitly opted in
+				if (
+					!includeBarrels &&
+					(await isBarrelFile({ filePath, logger }, parseErrors))
+				) {
+					logger.verbose(
+						`Skipping barrel file (use --include-barrels to rewrite it): ${filePath}`
+					)
+					stats.targetFilesSkipped++
+					continue
+				}
+
 				stats.targetFilesProcessed++
 				await updateImports({
 					filePath,
