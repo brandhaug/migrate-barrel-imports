@@ -9,7 +9,8 @@ describe('parseCliArgs', (): void => {
 			includeExtension: undefined,
 			dryRun: undefined,
 			ignoreSourceFiles: undefined,
-			ignoreTargetFiles: undefined
+			ignoreTargetFiles: undefined,
+			verbosity: undefined
 		})
 	})
 
@@ -20,7 +21,8 @@ describe('parseCliArgs', (): void => {
 			includeExtension: undefined,
 			dryRun: undefined,
 			ignoreSourceFiles: undefined,
-			ignoreTargetFiles: undefined
+			ignoreTargetFiles: undefined,
+			verbosity: undefined
 		})
 	})
 
@@ -55,5 +57,25 @@ describe('parseCliArgs', (): void => {
 			'**/node_modules/**'
 		])
 		expect(args.ignoreTargetFiles).toEqual(['**/*.spec.ts'])
+	})
+
+	it('parses --quiet', (): void => {
+		expect(parseCliArgs(['--quiet']).verbosity).toBe('quiet')
+	})
+
+	it('parses -q as a shorthand for --quiet', (): void => {
+		expect(parseCliArgs(['-q']).verbosity).toBe('quiet')
+	})
+
+	it('parses --verbose', (): void => {
+		expect(parseCliArgs(['--verbose']).verbosity).toBe('verbose')
+	})
+
+	it('leaves verbosity undefined when neither flag is given', (): void => {
+		expect(parseCliArgs(['packages/*']).verbosity).toBeUndefined()
+	})
+
+	it('prefers --verbose when combined with --quiet', (): void => {
+		expect(parseCliArgs(['--quiet', '--verbose']).verbosity).toBe('verbose')
 	})
 })

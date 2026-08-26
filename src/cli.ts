@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util'
 import * as p from '@clack/prompts'
 import { migrateBarrelImports } from './migrate-barrel-imports.js'
+import type { Verbosity } from './logger.js'
 import { defaultOptions } from './options.js'
 import type { Options } from './options.js'
 
@@ -46,6 +47,17 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
 				default: undefined,
 				description: 'Preview changes without modifying files'
 			},
+			quiet: {
+				type: 'boolean',
+				short: 'q',
+				default: undefined,
+				description: 'Print only the migration summary'
+			},
+			verbose: {
+				type: 'boolean',
+				default: undefined,
+				description: 'Print per-file progress in addition to the summary'
+			},
 			help: { type: 'boolean', short: 'h', description: 'Show this help' }
 		}
 	})
@@ -62,6 +74,8 @@ Options:
   --ignore-source-files <patterns> Comma-separated patterns to ignore in source dirs
   --ignore-target-files <patterns> Comma-separated patterns to ignore in target dirs
   --dry-run / --no-dry-run       Preview changes without modifying files
+  -q, --quiet                      Print only the migration summary
+  --verbose                        Print per-file progress in addition to the summary
   -h, --help                       Show this help`)
 		process.exit(0)
 	}
@@ -72,8 +86,24 @@ Options:
 		includeExtension: values.extension ?? (noExtension ? false : undefined),
 		dryRun: noDryRun ? false : values['dry-run'],
 		ignoreSourceFiles: splitPatterns(values['ignore-source-files']),
-		ignoreTargetFiles: splitPatterns(values['ignore-target-files'])
+		ignoreTargetFiles: splitPatterns(values['ignore-target-files']),
+		verbosity: resolveVerbosityFlag(values.verbose, values.quiet)
 	}
+}
+
+function resolveVerbosityFlag(
+	verbose: boolean | undefined,
+	quiet: boolean | undefined
+): Verbosity | undefined {
+	if (verbose) {
+		return 'verbose'
+	}
+
+	if (quiet) {
+		return 'quiet'
+	}
+
+	return undefined
 }
 
 function extractNegations(argv: readonly string[]): {
@@ -180,12 +210,16 @@ async function resolveDryRun(
 export async function main(
 	argv: readonly string[] = process.argv.slice(2)
 ): Promise<void> {
-	p.intro('migrate-barrel-imports')
-	p.log.info(
-		'Migrate barrel files imports to direct imports in JavaScript/TypeScript monorepos'
-	)
-
 	const args = parseCliArgs(argv)
+	const verbosity = args.verbosity ?? defaultOptions.verbosity
+	const isQuiet = verbosity === 'quiet'
+
+	if (!isQuiet) {
+		p.intro('migrate-barrel-imports')
+		p.log.info(
+			'Migrate barrel files imports to direct imports in JavaScript/TypeScript monorepos'
+		)
+	}
 
 	const sourcePath = await resolveSourcePath(args.sourcePath)
 	if (p.isCancel(sourcePath)) {
@@ -217,8 +251,11 @@ export async function main(
 		ignoreSourceFiles: resolveIgnoreSourceFiles(args.ignoreSourceFiles),
 		ignoreTargetFiles: resolveIgnoreTargetFiles(args.ignoreTargetFiles),
 		includeExtension,
-		dryRun
+		dryRun,
+		verbosity
 	})
 
-	p.outro('Done')
+	if (!isQuiet) {
+		p.outro('Done')
+	}
 }

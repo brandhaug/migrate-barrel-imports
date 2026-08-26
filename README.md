@@ -64,7 +64,15 @@ npx migrate-barrel-imports <source-path> [target-path] [options]
 | `--ignore-source-files <patterns>` | Comma-separated file patterns to ignore in source directories | _(none)_      |
 | `--ignore-target-files <patterns>` | Comma-separated file patterns to ignore in target directories | _(none)_      |
 | `--dry-run`                        | Preview changes as a diff without modifying files             | off           |
+| `-q`, `--quiet`                    | Print only the migration summary                              | off           |
+| `--verbose`                        | Print per-file progress in addition to the summary            | off           |
 | `-h`, `--help`                     | Show help                                                     | —             |
+
+By default the CLI prints the migration summary and any warnings. `--verbose`
+adds per-file progress, and `-q` / `--quiet` prints the summary alone. Errors
+are always printed. Single log lines longer than 500 characters are truncated
+with an ellipsis, which keeps generated files with thousands of exports from
+flooding the terminal.
 
 When arguments or flags are omitted, the CLI falls back to interactive prompts
 for the missing values only. Supplying the source path (and any flags) runs the
@@ -95,6 +103,9 @@ migrate-barrel-imports ./packages/my-lib \
 
 # Migrate multiple packages using glob pattern
 migrate-barrel-imports "libs/*" --no-extension
+
+# Print only the migration summary
+migrate-barrel-imports "libs/*" --quiet
 
 # Migrate specific packages
 migrate-barrel-imports "packages/{ui,core,utils}" --ignore-target-files "**/*.test.ts"
