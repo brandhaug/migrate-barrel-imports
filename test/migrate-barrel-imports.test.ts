@@ -1244,6 +1244,14 @@ describe.concurrent('unparseable files', (): void => {
 		}
 
 		expect(lines.join('\n')).toContain('Files that could not be parsed: 1')
+		// The unparseable file list is printed exactly once
+		const unparseableHeadings = lines.filter(
+			(line) => line === 'Unparseable files:'
+		)
+		expect(unparseableHeadings).toHaveLength(1)
+		expect(lines.join('\n')).toContain(
+			`- ${path.join(targetDir, 'src/broken.ts')}`
+		)
 
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
 	})
@@ -1865,6 +1873,12 @@ export { add, PI } from "@test/source-lib";
 
 		expect(result.stats.targetFilesSkipped).toBe(1)
 		expect(result.stats.targetFilesProcessed).toBe(0)
+		// A barrel-skipped file is counted as skipped, not as found or failed
+		expect(result.stats.targetFilesFound).toBe(0)
+		expect(result.stats.targetFilesFailed).toBe(0)
+		expect(result.stats.targetFilesFound).toBe(
+			result.stats.targetFilesProcessed + result.stats.targetFilesFailed
+		)
 		expect(lines.join('\n')).toContain(
 			`Skipping barrel file (use --include-barrels to rewrite it): ${barrelPath}`
 		)
@@ -1916,6 +1930,46 @@ describe('migration result', (): void => {
 		})
 
 		expect(result.mode).toBe('apply')
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('leaves imports from a sibling package with a shared prefix untouched', async () => {
+		const { monorepoDir, sourceDir, targetDir } = createTestSetup(
+			'result-prefix-collision'
+		)
+
+		createPackageJson(sourceDir, '@test/lib')
+		createSourceFiles(sourceDir, {
+			'src/utils.ts': `export const add = (a: number, b: number): number => a + b;\n`,
+			'src/index.ts': `export * from "./utils";\n`
+		})
+
+		// The sibling package name starts with the migrated package name
+		createPackageJson(targetDir, '@test/lib-extra', {
+			'@test/lib': '1.0.0'
+		})
+		const targetFilePath = path.join(targetDir, 'src/calculator.ts')
+		fs.writeFileSync(
+			targetFilePath,
+			`
+import { add } from "@test/lib";
+import { extra } from "@test/lib-extra";
+
+export const sum = add(1, 2) + extra;
+`
+		)
+
+		await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		const content = fs.readFileSync(targetFilePath, 'utf8')
+		expect(content).toContain('from "@test/lib/src/utils.ts"')
+		// The sibling package import must not be rewritten
+		expect(content).toContain('from "@test/lib-extra"')
 
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
 	})

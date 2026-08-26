@@ -212,6 +212,38 @@ describe('cli --json', (): void => {
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
 	})
 
+	it('keeps stdout parseable when a target file is ignored', async () => {
+		const { monorepoDir, sourceDir } = createCliFixture('cli-json-ignored')
+		const ignoredFilePath = path.join(
+			monorepoDir,
+			'packages/target-app/src/generated.ts'
+		)
+		fs.writeFileSync(
+			ignoredFilePath,
+			'import { add } from "@test/source-lib";\nexport const x = add(1, 2);\n'
+		)
+
+		const { stdout, exitCode } = await runCli(
+			[
+				sourceDir,
+				monorepoDir,
+				'--json',
+				'--extension',
+				'--ignore-target-files',
+				'**/generated.ts'
+			],
+			monorepoDir
+		)
+
+		expect(exitCode).toBe(0)
+		// Exactly one JSON document on stdout, with nothing else leaked
+		expect(JSON.parse(stdout)).toMatchObject({ mode: 'apply' })
+		expect(stdout.trim().split('\n').length).toBe(1)
+		expect(JSON.parse(stdout).stats.targetFilesSkipped).toBeGreaterThan(0)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
 	it('prints exactly one JSON report in dry-run mode without writing files', async () => {
 		const { monorepoDir, sourceDir, targetFilePath } =
 			createCliFixture('cli-json-dry-run')
