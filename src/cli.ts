@@ -14,7 +14,8 @@ export type CliArgs = Partial<Omit<Options, 'targetPath'>> & {
  *
  * Supports two positionals (`source-path` and optional `target-path`) plus flags:
  * `--extension` / `--no-extension`, `--include-barrels` / `--no-include-barrels`,
- * `--ignore-source-files <patterns>`, `--ignore-target-files <patterns>`, `--dry-run`.
+ * `--ignore-source-files <patterns>`, `--ignore-target-files <patterns>`, `--dry-run`,
+ * `--quiet` / `--verbose`, `--json`.
  */
 export function parseCliArgs(argv: readonly string[]): CliArgs {
 	const {
@@ -65,6 +66,12 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
 				default: undefined,
 				description: 'Print per-file progress in addition to the summary'
 			},
+			json: {
+				type: 'boolean',
+				default: undefined,
+				description:
+					'Print one machine-readable JSON report to stdout and suppress all other output'
+			},
 			help: { type: 'boolean', short: 'h', description: 'Show this help' }
 		}
 	})
@@ -85,6 +92,7 @@ Options:
   --dry-run / --no-dry-run       Preview changes without modifying files
   -q, --quiet                      Print only the migration summary
   --verbose                        Print per-file progress in addition to the summary
+  --json                           Print one JSON report to stdout and suppress all other output
   -h, --help                       Show this help`)
 		process.exit(0)
 	}
@@ -98,7 +106,8 @@ Options:
 		dryRun: noDryRun ? false : values['dry-run'],
 		ignoreSourceFiles: splitPatterns(values['ignore-source-files']),
 		ignoreTargetFiles: splitPatterns(values['ignore-target-files']),
-		verbosity: resolveVerbosityFlag(values.verbose, values.quiet)
+		verbosity: resolveVerbosityFlag(values.verbose, values.quiet),
+		json: values.json
 	}
 }
 
@@ -222,10 +231,41 @@ async function resolveDryRun(
 	})
 }
 
+/**
+ * Runs the migration in `--json` mode: no prompts, no human-readable output,
+ * and a single JSON report on stdout for CI to parse.
+ */
+async function runJson(args: CliArgs): Promise<void> {
+	if (args.sourcePath === undefined || args.sourcePath.trim().length === 0) {
+		console.error('--json requires source-path to be given as an argument')
+		process.exitCode = 1
+		return
+	}
+
+	const result = await migrateBarrelImports({
+		sourcePath: args.sourcePath,
+		targetPath: args.targetPath ?? defaultOptions.targetPath,
+		ignoreSourceFiles: resolveIgnoreSourceFiles(args.ignoreSourceFiles),
+		ignoreTargetFiles: resolveIgnoreTargetFiles(args.ignoreTargetFiles),
+		includeExtension: args.includeExtension ?? true,
+		includeBarrels: args.includeBarrels ?? defaultOptions.includeBarrels,
+		dryRun: args.dryRun ?? false,
+		json: true
+	})
+
+	console.log(JSON.stringify(result))
+}
+
 export async function main(
 	argv: readonly string[] = process.argv.slice(2)
 ): Promise<void> {
 	const args = parseCliArgs(argv)
+
+	if (args.json === true) {
+		await runJson(args)
+		return
+	}
+
 	const verbosity = args.verbosity ?? defaultOptions.verbosity
 	const isQuiet = verbosity === 'quiet'
 

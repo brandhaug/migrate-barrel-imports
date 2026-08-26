@@ -123,6 +123,7 @@ interface FindImportsParams {
 	ignoreTargetFiles?: string[]
 	stats?: MigrationStats
 	parseErrors?: ParseError[]
+	skippedFiles?: string[]
 }
 
 /**
@@ -138,11 +139,21 @@ export interface ParseError {
 
 /**
  * The outcome of a migration run
+ *
+ * @property {'apply' | 'dry-run'} mode - Whether files were written or only previewed
+ * @property {MigrationStats} stats - Counters collected during the run
+ * @property {string[]} warnings - Non-fatal problems, including every parse failure with its file path
+ * @property {ParseError[]} parseErrors - Files that could not be parsed, with the parser message
+ * @property {string[]} changedFiles - Target files whose imports were rewritten (or would be, in dry-run)
+ * @property {string[]} skippedFiles - Target files left untouched, by ignore pattern or barrel detection
  */
 export interface MigrationResult {
+	mode: 'apply' | 'dry-run'
 	stats: MigrationStats
 	warnings: string[]
 	parseErrors: ParseError[]
+	changedFiles: string[]
+	skippedFiles: string[]
 }
 
 interface ImportSpec {
@@ -160,6 +171,7 @@ interface UpdateImportsParams {
 	warnings?: string[]
 	stats?: MigrationStats
 	parseErrors?: ParseError[]
+	changedFiles?: string[]
 }
 
 /** Logger used when a caller does not supply one. */
@@ -727,7 +739,8 @@ async function findImports({
 	logger = defaultLogger,
 	ignoreTargetFiles = [],
 	stats,
-	parseErrors
+	parseErrors,
+	skippedFiles
 }: FindImportsParams): Promise<string[]> {
 	try {
 		const allFiles = new Set<string>()
@@ -751,6 +764,7 @@ async function findImports({
 					micromatch.isMatch(relativePath, pattern)
 				)
 			) {
+				skippedFiles?.push(file)
 				if (stats) {
 					stats.targetFilesSkipped++
 				}
@@ -826,7 +840,8 @@ async function updateImports({
 	dryRun = false,
 	warnings,
 	stats,
-	parseErrors
+	parseErrors,
+	changedFiles
 }: UpdateImportsParams): Promise<void> {
 	logger.verbose(`\nProcessing file: ${filePath}`)
 	let modified = false
@@ -1057,6 +1072,7 @@ async function updateImports({
 				logger.verbose(`Writing changes to ${filePath}`)
 			}
 
+			changedFiles?.push(filePath)
 			if (stats) {
 				stats.importsUpdated++
 			}
@@ -1084,7 +1100,11 @@ async function updateImports({
  */
 export async function migrateBarrelImports(
 	options: MigrationOptions,
-	logger: Logger = createLogger({ verbosity: options.verbosity ?? 'normal' })
+	// `json` overrides verbosity: the report is the only thing allowed on stdout
+	logger: Logger = createLogger({
+		verbosity:
+			options.json === true ? 'silent' : (options.verbosity ?? 'normal')
+	})
 ): Promise<MigrationResult> {
 	const {
 		sourcePath,
@@ -1117,6 +1137,10 @@ export async function migrateBarrelImports(
 
 	// Track files that could not be parsed
 	const parseErrors: ParseError[] = []
+
+	// Track which target files this run rewrote and which it left alone
+	const changedFiles: string[] = []
+	const skippedFiles: string[] = []
 
 	if (dryRun) {
 		logger.info('[dry-run] Running in dry-run mode, no files will be modified')
@@ -1166,7 +1190,8 @@ export async function migrateBarrelImports(
 				logger,
 				ignoreTargetFiles,
 				stats,
-				parseErrors
+				parseErrors,
+				skippedFiles
 			})
 			stats.targetFilesFound = targetFiles.length
 
@@ -1181,6 +1206,7 @@ export async function migrateBarrelImports(
 					logger.verbose(
 						`Skipping barrel file (use --include-barrels to rewrite it): ${filePath}`
 					)
+					skippedFiles.push(filePath)
 					stats.targetFilesSkipped++
 					continue
 				}
@@ -1195,7 +1221,8 @@ export async function migrateBarrelImports(
 					dryRun,
 					warnings,
 					stats,
-					parseErrors
+					parseErrors,
+					changedFiles
 				})
 			}
 
@@ -1243,7 +1270,14 @@ export async function migrateBarrelImports(
 			warnings.forEach((warning) => logger.warn(`  - ${warning}`))
 		}
 
-		return { stats, warnings, parseErrors }
+		return {
+			mode: dryRun ? 'dry-run' : 'apply',
+			stats,
+			warnings,
+			parseErrors,
+			changedFiles,
+			skippedFiles
+		}
 	} catch (error) {
 		logger.error(`Error during migration: ${formatError(error)}`)
 		throw error

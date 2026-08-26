@@ -109,3 +109,30 @@ describe('createLogger', (): void => {
 		expect(quietLines).toEqual([])
 	})
 })
+
+describe('silent verbosity', (): void => {
+	it('swallows every human-readable level, including the summary', (): void => {
+		const lines = collect((write): void => {
+			const logger = createLogger({ verbosity: 'silent', write })
+			logger.verbose('scanning')
+			logger.info('[dry-run] Would update imports in src/app.ts')
+			logger.warn('Skipping src/broken.ts')
+			logger.summary('Migration Summary')
+		})
+
+		expect(lines).toEqual([])
+	})
+
+	it('still reports errors so diagnostics survive', (): void => {
+		const errors: string[] = []
+		createLogger({
+			verbosity: 'silent',
+			write: (): void => {},
+			writeError: (line: string): void => {
+				errors.push(line)
+			}
+		}).error('Error during migration: boom')
+
+		expect(errors).toEqual(['Error during migration: boom'])
+	})
+})

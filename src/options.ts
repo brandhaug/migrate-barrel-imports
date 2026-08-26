@@ -7,6 +7,7 @@
  * @property {boolean} [includeExtension] - Whether to include file extensions in imports
  * @property {boolean} [includeBarrels] - Whether to rewrite imports inside barrel files as well
  * @property {Verbosity} [verbosity] - How much output the migration prints
+ * @property {boolean} [json] - Whether to suppress human-readable output so a single JSON report can be printed
  */
 import type { Verbosity } from './logger.js'
 
@@ -19,6 +20,7 @@ export type Options = {
 	includeBarrels?: boolean
 	dryRun?: boolean
 	verbosity?: Verbosity
+	json?: boolean
 }
 
 export const defaultOptions: Omit<Options, 'sourcePath'> = {

@@ -1,11 +1,12 @@
 /**
  * How much output the migration prints.
  *
+ * - `silent`: nothing at all, not even the summary; errors still go to stderr
  * - `quiet`: only the migration summary
  * - `normal`: summary, dry-run diffs and warnings
  * - `verbose`: everything, including per-file progress
  */
-export type Verbosity = 'quiet' | 'normal' | 'verbose'
+export type Verbosity = 'silent' | 'quiet' | 'normal' | 'verbose'
 
 export type Logger = {
 	verbose: (message: string) => void
@@ -55,17 +56,19 @@ export function createLogger(options: CreateLoggerOptions): Logger {
 			}
 		},
 		info: (message: string): void => {
-			if (verbosity !== 'quiet') {
+			if (verbosity !== 'quiet' && verbosity !== 'silent') {
 				write(message)
 			}
 		},
 		warn: (message: string): void => {
-			if (verbosity !== 'quiet') {
+			if (verbosity !== 'quiet' && verbosity !== 'silent') {
 				write(message)
 			}
 		},
 		summary: (message: string): void => {
-			write(message)
+			if (verbosity !== 'silent') {
+				write(message)
+			}
 		},
 		error: (message: string): void => {
 			writeErrorLine(truncateMessage(message))
