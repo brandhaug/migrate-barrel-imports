@@ -10,9 +10,9 @@
  * @property {Verbosity} [verbosity] - How much output the migration prints
  * @property {boolean} [json] - Whether to suppress human-readable output so a single JSON report can be printed
  */
-import type { Verbosity } from './logger.js'
+import { type Verbosity } from './logger.js'
 
-export type Options = {
+export interface Options {
 	sourcePath: string
 	targetPath: string
 	targetGlob?: string

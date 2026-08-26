@@ -79,14 +79,14 @@ const createSourceFiles = (
 
 const cleanOutput = (content: string): string => {
 	return content
-		.replace(/\s+/g, ' ')
-		.replace(/\s*{\s*/g, ' { ')
-		.replace(/\s*}\s*/g, ' } ')
-		.replace(/\s*,\s*/g, ', ')
-		.replace(/\s*;\s*/g, ';')
-		.replace(/import\s*{\s*/g, 'import { ')
-		.replace(/\s*}\s*from/g, ' } from')
-		.replace(/\s+/g, ' ')
+		.replaceAll(/\s+/g, ' ')
+		.replaceAll(/\s*{\s*/g, ' { ')
+		.replaceAll(/\s*}\s*/g, ' } ')
+		.replaceAll(/\s*,\s*/g, ', ')
+		.replaceAll(/\s*;\s*/g, ';')
+		.replaceAll(/import\s*{\s*/g, 'import { ')
+		.replaceAll(/\s*}\s*from/g, ' } from')
+		.replaceAll(/\s+/g, ' ')
 		.trim()
 }
 
@@ -99,7 +99,7 @@ const runMigrateBarrelImports = async (
 		targetPath: overrides.targetPath || 'target-path',
 		...overrides
 	}
-	return await migrateBarrelImports(options)
+	return migrateBarrelImports(options)
 }
 
 describe.concurrent('migrate-barrel-imports', (): void => {
@@ -174,7 +174,7 @@ export const fetchWithRetry = async (endpoint) => {
 	testCases.forEach(({ name, sourceExports, targetFile, expectedImports }) => {
 		it(`should migrate barrel imports in a ${name}`, async () => {
 			const { monorepoDir, sourceDir, targetDir } = createTestSetup(
-				name.toLowerCase().replace(/\s+/g, '-')
+				name.toLowerCase().replaceAll(/\s+/g, '-')
 			)
 
 			// Setup source package
@@ -200,7 +200,7 @@ export const fetchWithRetry = async (endpoint) => {
 			// Verify results
 			const updatedContent = fs.readFileSync(
 				path.join(targetDir, targetFile.path),
-				'utf-8'
+				'utf8'
 			)
 			const cleanedContent = cleanOutput(updatedContent)
 
@@ -294,7 +294,7 @@ export const loadConfig = (config: Config): void => {
 		({ name, sourceExports, targetFile, expectedImports }) => {
 			it(`should migrate barrel imports for ${name}`, async () => {
 				const { monorepoDir, sourceDir, targetDir } = createTestSetup(
-					name.toLowerCase().replace(/\s+/g, '-')
+					name.toLowerCase().replaceAll(/\s+/g, '-')
 				)
 
 				// Setup source package
@@ -320,7 +320,7 @@ export const loadConfig = (config: Config): void => {
 				// Verify results
 				const updatedContent = fs.readFileSync(
 					path.join(targetDir, targetFile.path),
-					'utf-8'
+					'utf8'
 				)
 				const cleanedContent = cleanOutput(updatedContent)
 
@@ -419,11 +419,11 @@ export const App = () => {
 		// Verify results for both internal and external files
 		const formContent = fs.readFileSync(
 			path.join(internalSourceDir, 'src/Form.tsx'),
-			'utf-8'
+			'utf8'
 		)
 		const appContent = fs.readFileSync(
 			path.join(targetDir, 'src/App.tsx'),
-			'utf-8'
+			'utf8'
 		)
 
 		// Source package files are never rewrite targets
@@ -753,7 +753,7 @@ export const App = () => {
 		({ name, sourceExports, targetFile, expectedImports }) => {
 			it(`should handle ${name}`, async () => {
 				const { monorepoDir, sourceDir, targetDir } = createTestSetup(
-					name.toLowerCase().replace(/\s+/g, '-')
+					name.toLowerCase().replaceAll(/\s+/g, '-')
 				)
 
 				// Setup source package
@@ -779,7 +779,7 @@ export const App = () => {
 				// Verify results
 				const updatedContent = fs.readFileSync(
 					path.join(targetDir, targetFile.path),
-					'utf-8'
+					'utf8'
 				)
 				const cleanedContent = cleanOutput(updatedContent)
 
@@ -826,7 +826,7 @@ export const echo = (value: string): string => identity(value);
 
 		const updatedContent = fs.readFileSync(
 			path.join(targetDir, 'src/consumer.ts'),
-			'utf-8'
+			'utf8'
 		)
 
 		expect(cleanOutput(updatedContent)).toContain(
@@ -869,7 +869,7 @@ export const View = () => <Badge label="hi" />;
 
 		const updatedContent = fs.readFileSync(
 			path.join(targetDir, 'src/view.tsx'),
-			'utf-8'
+			'utf8'
 		)
 
 		expect(cleanOutput(updatedContent)).toContain(
@@ -915,7 +915,7 @@ export const sum = (a: number, b: number): number => add(a, b);
 
 		const updatedContent = fs.readFileSync(
 			path.join(targetDir, 'src/generic-consumer.ts'),
-			'utf-8'
+			'utf8'
 		)
 
 		expect(cleanOutput(updatedContent)).toContain(
@@ -1064,7 +1064,7 @@ describe.concurrent('unparseable files', (): void => {
 		)
 
 		const goodContent = cleanOutput(
-			fs.readFileSync(path.join(targetDir, 'src/b-good.ts'), 'utf-8')
+			fs.readFileSync(path.join(targetDir, 'src/b-good.ts'), 'utf8')
 		)
 		expect(goodContent).toContain(
 			'import { add } from "@test/source-lib/src/utils.ts"'
@@ -1104,7 +1104,7 @@ describe.concurrent('unparseable files', (): void => {
 		)
 
 		const consumerContent = cleanOutput(
-			fs.readFileSync(path.join(targetDir, 'src/consumer.ts'), 'utf-8')
+			fs.readFileSync(path.join(targetDir, 'src/consumer.ts'), 'utf8')
 		)
 		expect(consumerContent).toContain(
 			'import { add } from "@test/source-lib/src/utils.ts"'
@@ -1270,7 +1270,7 @@ describe.concurrent('unparseable files', (): void => {
 		)
 
 		const consumerContent = cleanOutput(
-			fs.readFileSync(path.join(targetDir, 'src/consumer.ts'), 'utf-8')
+			fs.readFileSync(path.join(targetDir, 'src/consumer.ts'), 'utf8')
 		)
 		expect(consumerContent).toContain(
 			'import { add } from "@test/good-lib/src/utils.ts"'
@@ -1455,7 +1455,7 @@ export const calculateArea = (radius: number): number => {
 		const lines: string[] = []
 		const originalLog = console.log
 		console.log = (...args: unknown[]): void => {
-			lines.push(args.map((arg) => String(arg)).join(' '))
+			lines.push(args.map(String).join(' '))
 		}
 
 		try {
@@ -1496,7 +1496,7 @@ export const calculateArea = (radius: number): number => {
 
 		await captureDryRunOutput(sourceDir, monorepoDir)
 
-		expect(fs.readFileSync(targetFilePath, 'utf-8')).toBe(
+		expect(fs.readFileSync(targetFilePath, 'utf8')).toBe(
 			dryRunTargetFile.content
 		)
 
@@ -1548,7 +1548,8 @@ describe.concurrent('output verbosity', (): void => {
 	}
 
 	it('prints only the migration summary in quiet mode', async () => {
-		const output = (await runWithVerbosity('quiet-mode', 'quiet')).join('\n')
+		const lines = await runWithVerbosity('quiet-mode', 'quiet')
+		const output = lines.join('\n')
 
 		expect(output).toContain('Migration Summary')
 		expect(output).toContain('Total imports migrated:')
@@ -1557,7 +1558,8 @@ describe.concurrent('output verbosity', (): void => {
 	})
 
 	it('prints the summary but no per-file processing output by default', async () => {
-		const output = (await runWithVerbosity('normal-mode', 'normal')).join('\n')
+		const lines = await runWithVerbosity('normal-mode', 'normal')
+		const output = lines.join('\n')
 
 		expect(output).toContain('Migration Summary')
 		expect(output).not.toContain('Processing file:')
@@ -1565,9 +1567,8 @@ describe.concurrent('output verbosity', (): void => {
 	})
 
 	it('prints per-file processing output in verbose mode', async () => {
-		const output = (await runWithVerbosity('verbose-mode', 'verbose')).join(
-			'\n'
-		)
+		const lines = await runWithVerbosity('verbose-mode', 'verbose')
+		const output = lines.join('\n')
 
 		expect(output).toContain('Processing file:')
 		expect(output).toContain('Scanning for TypeScript')
@@ -1667,7 +1668,8 @@ describe.concurrent('output verbosity', (): void => {
 	}
 
 	it('prints the dry-run import diff by default', async () => {
-		const output = (await runDryRun('dry-run-normal', 'normal')).join('\n')
+		const lines = await runDryRun('dry-run-normal', 'normal')
+		const output = lines.join('\n')
 
 		expect(output).toContain('[dry-run] Would update imports in')
 		expect(output).toContain(
@@ -1677,7 +1679,8 @@ describe.concurrent('output verbosity', (): void => {
 	})
 
 	it('suppresses the dry-run import diff in quiet mode', async () => {
-		const output = (await runDryRun('dry-run-quiet', 'quiet')).join('\n')
+		const lines = await runDryRun('dry-run-quiet', 'quiet')
+		const output = lines.join('\n')
 
 		expect(output).not.toContain('[dry-run] Would update imports in')
 		expect(output).toContain('Mode: dry-run (no files were modified)')
@@ -1727,9 +1730,8 @@ describe.concurrent('output verbosity', (): void => {
 	}
 
 	it('warns about unparseable files by default and still migrates', async () => {
-		const output = (
-			await runWithUnparseableFile('parse-error-normal', 'normal')
-		).join('\n')
+		const lines = await runWithUnparseableFile('parse-error-normal', 'normal')
+		const output = lines.join('\n')
 
 		expect(output).toContain('src/broken.ts: failed to parse')
 		expect(output).toContain('Files that could not be parsed: 1')
@@ -1737,9 +1739,8 @@ describe.concurrent('output verbosity', (): void => {
 	})
 
 	it('suppresses parse warnings in quiet mode but keeps the summary count', async () => {
-		const output = (
-			await runWithUnparseableFile('parse-error-quiet', 'quiet')
-		).join('\n')
+		const lines = await runWithUnparseableFile('parse-error-quiet', 'quiet')
+		const output = lines.join('\n')
 
 		expect(output).not.toContain('Skipping')
 		expect(output).toContain('Files that could not be parsed: 1')
@@ -1796,7 +1797,7 @@ export { add, PI } from "@test/source-lib";
 			includeBarrels: true
 		})
 
-		const cleanedContent = cleanOutput(fs.readFileSync(barrelPath, 'utf-8'))
+		const cleanedContent = cleanOutput(fs.readFileSync(barrelPath, 'utf8'))
 
 		expect(cleanedContent).toContain(
 			'export { add } from "@test/source-lib/src/utils.ts"'
@@ -1819,7 +1820,7 @@ export { add, PI } from "@test/source-lib";
 			includeExtension: true
 		})
 
-		expect(fs.readFileSync(barrelPath, 'utf-8')).toBe(barrelTargetContent)
+		expect(fs.readFileSync(barrelPath, 'utf8')).toBe(barrelTargetContent)
 
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
 	})
@@ -2113,11 +2114,11 @@ describe.concurrent('target scan scope', (): void => {
 			includeExtension: true
 		})
 
-		expect(fs.readFileSync(path.join(sourceDir, selfImportPath), 'utf-8')).toBe(
+		expect(fs.readFileSync(path.join(sourceDir, selfImportPath), 'utf8')).toBe(
 			selfImportContent
 		)
 		expect(
-			cleanOutput(fs.readFileSync(path.join(targetDir, 'src/app.ts'), 'utf-8'))
+			cleanOutput(fs.readFileSync(path.join(targetDir, 'src/app.ts'), 'utf8'))
 		).toContain('import { add } from "@test/source-lib/src/utils.ts"')
 
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
@@ -2156,7 +2157,7 @@ describe.concurrent('target scan scope', (): void => {
 
 		expect(
 			cleanOutput(
-				fs.readFileSync(path.join(consumerDir, 'src/consumer.ts'), 'utf-8')
+				fs.readFileSync(path.join(consumerDir, 'src/consumer.ts'), 'utf8')
 			)
 		).toContain('import { add } from "@test/source-lib/src/utils.ts"')
 
@@ -2198,10 +2199,10 @@ describe.concurrent('target scan scope', (): void => {
 
 		expect(
 			cleanOutput(
-				fs.readFileSync(path.join(consumerDir, 'src/consumer.ts'), 'utf-8')
+				fs.readFileSync(path.join(consumerDir, 'src/consumer.ts'), 'utf8')
 			)
 		).toContain('import { add } from "@test/source-lib/src/utils.ts"')
-		expect(fs.readFileSync(path.join(libDir, 'src/internal.ts'), 'utf-8')).toBe(
+		expect(fs.readFileSync(path.join(libDir, 'src/internal.ts'), 'utf8')).toBe(
 			selfImportContent
 		)
 
@@ -2241,10 +2242,10 @@ describe.concurrent('target scan scope', (): void => {
 		})
 
 		expect(
-			cleanOutput(fs.readFileSync(path.join(appDir, 'src/app.ts'), 'utf-8'))
+			cleanOutput(fs.readFileSync(path.join(appDir, 'src/app.ts'), 'utf8'))
 		).toContain('import { add } from "@test/source-lib/src/utils.ts"')
 		expect(
-			fs.readFileSync(path.join(unrelatedDir, 'src/conf.ts'), 'utf-8')
+			fs.readFileSync(path.join(unrelatedDir, 'src/conf.ts'), 'utf8')
 		).toBe(importerContent)
 
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
@@ -2372,16 +2373,16 @@ const appFileB =
 const runStatsFixture = async (
 	fixture: StatsFixture,
 	overrides: Partial<Options> = {}
-): Promise<MigrationStats> =>
-	(
-		await migrateBarrelImports({
-			...defaultOptions,
-			sourcePath: fixture.libsDir,
-			targetPath: fixture.monorepoDir,
-			includeExtension: true,
-			...overrides
-		})
-	).stats
+): Promise<MigrationStats> => {
+	const result = await migrateBarrelImports({
+		...defaultOptions,
+		sourcePath: fixture.libsDir,
+		targetPath: fixture.monorepoDir,
+		includeExtension: true,
+		...overrides
+	})
+	return result.stats
+}
 
 describe.concurrent('migration stats', (): void => {
 	it('returns the stats for a single source package', async () => {
@@ -2471,8 +2472,7 @@ describe.concurrent('migration stats', (): void => {
 
 	it('counts a target file importing from two packages once', async () => {
 		const fixture = createStatsFixture('stats-shared-target', [libA, libB], {
-			'src/both.ts':
-				'import { add } from "@test/lib-a";\nimport { API_URL } from "@test/lib-b";\nexport const value = `${API_URL}${add(1, 1)}`;\n'
+			'src/both.ts': `import { add } from "@test/lib-a";\nimport { API_URL } from "@test/lib-b";\nexport const value = \`\${API_URL}\${add(1, 1)}\`;\n`
 		})
 
 		const stats = await runStatsFixture(fixture)
@@ -2539,7 +2539,7 @@ describe.concurrent('migration stats', (): void => {
 		expect(stats.targetFilesProcessed).toBe(2)
 		expect(stats.importsUpdated).toBe(2)
 		expect(stats.importsMigrated).toBe(2)
-		expect(fs.readFileSync(appFilePath, 'utf-8')).toBe(appFileA)
+		expect(fs.readFileSync(appFilePath, 'utf8')).toBe(appFileA)
 
 		fs.rmSync(fixture.monorepoDir, { recursive: true, force: true })
 	})

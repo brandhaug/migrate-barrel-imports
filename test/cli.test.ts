@@ -207,7 +207,7 @@ describe('cli --json', (): void => {
 		expect(report.changedFiles).toEqual([targetFilePath])
 		expect(report.skippedFiles).toEqual([])
 
-		expect(fs.readFileSync(targetFilePath, 'utf-8')).toContain(
+		expect(fs.readFileSync(targetFilePath, 'utf8')).toContain(
 			'@test/source-lib/src/utils.ts'
 		)
 
@@ -217,7 +217,7 @@ describe('cli --json', (): void => {
 	it('prints exactly one JSON report in dry-run mode without writing files', async () => {
 		const { monorepoDir, sourceDir, targetFilePath } =
 			createCliFixture('cli-json-dry-run')
-		const originalContent = fs.readFileSync(targetFilePath, 'utf-8')
+		const originalContent = fs.readFileSync(targetFilePath, 'utf8')
 
 		const { stdout, exitCode } = await runCli(
 			[sourceDir, monorepoDir, '--json', '--extension', '--dry-run'],
@@ -230,7 +230,7 @@ describe('cli --json', (): void => {
 		expect(report.mode).toBe('dry-run')
 		expect(report.stats.importsMigrated).toBe(1)
 		expect(report.changedFiles).toEqual([targetFilePath])
-		expect(fs.readFileSync(targetFilePath, 'utf-8')).toBe(originalContent)
+		expect(fs.readFileSync(targetFilePath, 'utf8')).toBe(originalContent)
 
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
 	})
