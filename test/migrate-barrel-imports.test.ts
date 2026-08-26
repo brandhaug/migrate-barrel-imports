@@ -5,7 +5,10 @@ import path from 'node:path'
 import { describe, expect, it } from 'bun:test'
 import {
 	isBarrelFile,
-	migrateBarrelImports
+	type ExportInfo,
+	findExports,
+	migrateBarrelImports,
+	resolveExportSource
 } from '../src/migrate-barrel-imports'
 import { defaultOptions, type Options } from '../src/options'
 
@@ -697,6 +700,29 @@ export const App = () => {
 			]
 		},
 		{
+			name: 'Name re-exported by a barrel and exported directly',
+			sourceExports: {
+				'src/aggregate.ts': `
+          export { McpToolDescriptor } from './mcp-tool';
+        `,
+				'src/mcp-tool.ts': `
+          export interface McpToolDescriptor { name: string; }
+        `,
+				'src/index.ts': `
+          export * from './aggregate';
+        `
+			},
+			targetFile: {
+				path: 'src/app.ts',
+				content: `
+          import { McpToolDescriptor } from "@test/source-lib";
+        `
+			},
+			expectedImports: [
+				'import { McpToolDescriptor } from "@test/source-lib/src/mcp-tool.ts"'
+			]
+		},
+		{
 			name: 'Only migrate imports from barrel files',
 			sourceExports: {
 				'src/components/Button.tsx':
@@ -1251,5 +1277,129 @@ describe.concurrent('unparseable files', (): void => {
 		)
 
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+})
+
+describe.concurrent('findExports', (): void => {
+	const createPackage = (
+		testName: string,
+		files: Record<string, string>
+	): string => {
+		const packageDir = path.join(
+			process.env.RUNNER_TEMP || os.tmpdir(),
+			`test-${testName}-${randomUUID()}`
+		)
+		fs.mkdirSync(packageDir, { recursive: true })
+		createPackageJson(packageDir, '@test/source-lib')
+		createSourceFiles(packageDir, files)
+		return packageDir
+	}
+
+	it('reports each exported name once per file', async () => {
+		const packagePath = createPackage('dedupe-names', {
+			'src/dto.ts': 'export interface WorkspaceOverviewDto { id: string; }',
+			'src/index.ts': `
+export { WorkspaceOverviewDto } from './dto';
+export type { WorkspaceOverviewDto } from './dto';
+`
+		})
+
+		const exports = await findExports({ packagePath })
+		const indexExports = exports.find((info) => info.source === 'src/index.ts')
+
+		expect(indexExports?.exports).toEqual(['WorkspaceOverviewDto'])
+
+		fs.rmSync(packagePath, { recursive: true, force: true })
+	})
+
+	it('logs each exported name once per file', async () => {
+		const packagePath = createPackage('dedupe-log', {
+			'src/dto.ts': 'export interface WorkspaceOverviewDto { id: string; }',
+			'src/index.ts': `
+export { WorkspaceOverviewDto } from './dto';
+export type { WorkspaceOverviewDto } from './dto';
+`
+		})
+		const lines: string[] = []
+		const originalLog = console.log
+		console.log = (...args: unknown[]): void => {
+			lines.push(args.join(' '))
+		}
+
+		try {
+			await findExports({ packagePath })
+		} finally {
+			console.log = originalLog
+		}
+
+		const indexLine = lines.find(
+			(line) =>
+				line.startsWith('Found exports') && line.endsWith('in src/index.ts')
+		)
+		expect(indexLine).toBe('Found exports WorkspaceOverviewDto in src/index.ts')
+
+		fs.rmSync(packagePath, { recursive: true, force: true })
+	})
+
+	it('records each file once per exported name', async () => {
+		const packagePath = createPackage('dedupe-files', {
+			'src/dto.ts': 'export interface WorkspaceOverviewDto { id: string; }',
+			'src/index.ts': `
+export { WorkspaceOverviewDto } from './dto';
+export type { WorkspaceOverviewDto } from './dto';
+`
+		})
+
+		const exports = await findExports({ packagePath })
+		const files = exports[0]?.exportFiles?.WorkspaceOverviewDto ?? []
+
+		expect(files).toEqual(['src/dto.ts', 'src/index.ts'])
+
+		fs.rmSync(packagePath, { recursive: true, force: true })
+	})
+})
+
+const buildDuplicatedExports = (files: string[]): ExportInfo[] =>
+	files.map((source) => ({
+		source,
+		exports: ['Duplicated'],
+		exportFiles: { Duplicated: files }
+	}))
+
+describe.concurrent('resolveExportSource', (): void => {
+	it('prefers the direct module over a barrel that re-exports the name', () => {
+		const exportFiles = {
+			McpToolDescriptor: ['src/aggregate.ts', 'src/mcp-tool.ts']
+		}
+		const exports: ExportInfo[] = [
+			{
+				source: 'src/aggregate.ts',
+				exports: ['McpToolDescriptor'],
+				isBarrelFile: true,
+				exportFiles
+			},
+			{
+				source: 'src/mcp-tool.ts',
+				exports: ['McpToolDescriptor'],
+				exportFiles
+			}
+		]
+
+		expect(resolveExportSource({ name: 'McpToolDescriptor', exports })).toBe(
+			'src/mcp-tool.ts'
+		)
+	})
+
+	it('resolves the same source regardless of candidate order', () => {
+		const forward = resolveExportSource({
+			name: 'Duplicated',
+			exports: buildDuplicatedExports(['src/one.ts', 'src/two.ts'])
+		})
+		const reversed = resolveExportSource({
+			name: 'Duplicated',
+			exports: buildDuplicatedExports(['src/two.ts', 'src/one.ts'])
+		})
+
+		expect(forward).toBe(reversed)
 	})
 })

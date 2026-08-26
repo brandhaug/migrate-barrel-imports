@@ -107,7 +107,7 @@ function getBabelConfig(filePath: string): ParserOptions {
  * @property {boolean} [isBarrelFile] - Whether this file is a barrel file
  * @property {Record<string, string[]>} [exportFiles] - Map of export names to all files that export them
  */
-interface ExportInfo {
+export interface ExportInfo {
 	source: string
 	exports: string[]
 	isIgnored?: boolean
@@ -347,6 +347,87 @@ export async function isBarrelFile(
 	}
 }
 
+const AUXILIARY_FILE_MARKERS = [
+	'.stories.',
+	'.test.',
+	'.spec.',
+	'.stories/',
+	'.test/',
+	'.spec/'
+]
+
+interface ResolveExportSourceParams {
+	name: string
+	exports: ExportInfo[]
+}
+
+/**
+ * Resolves the single canonical source module for an exported name
+ *
+ * A name can be reachable through several files: the module defining it, and any
+ * barrel re-exporting it. Candidates are ranked deterministically:
+ * 1. Auxiliary files (stories, tests, specs) are dropped when anything else exists
+ * 2. Modules defining the name win over barrels re-exporting it
+ * 3. The last remaining candidate in lexicographic order wins, so the result
+ *    does not depend on the order files were scanned in
+ *
+ * @param {ResolveExportSourceParams} params - Export name and collected exports
+ * @returns {string | undefined} Canonical source file, or undefined if unknown
+ */
+export function resolveExportSource({
+	name,
+	exports
+}: ResolveExportSourceParams): string | undefined {
+	const candidates: string[] = []
+	const barrelSources = new Set<string>()
+
+	for (const info of exports) {
+		if (info.isBarrelFile) {
+			barrelSources.add(info.source)
+		}
+		for (const file of info.exportFiles?.[name] ?? []) {
+			if (!candidates.includes(file)) {
+				candidates.push(file)
+			}
+		}
+		if (info.exports.includes(name) && !candidates.includes(info.source)) {
+			candidates.push(info.source)
+		}
+	}
+
+	if (candidates.length === 0) return undefined
+
+	const mainFiles = candidates.filter(
+		(file) => !AUXILIARY_FILE_MARKERS.some((marker) => file.includes(marker))
+	)
+	const ranked = mainFiles.length > 0 ? mainFiles : candidates
+	const direct = ranked.filter((file) => !barrelSources.has(file))
+	const preferred = direct.length > 0 ? direct : ranked
+
+	// Pick the last path in lexicographic order so the winner never depends on
+	// the order files were scanned in
+	return preferred.reduce((winner, file) => (file > winner ? file : winner))
+}
+
+/**
+ * Records that a file exports a name, keeping each file listed at most once
+ *
+ * @param {Record<string, string[]>} exportFiles - Map of export names to files
+ * @param {string} name - Exported name
+ * @param {string} file - File exporting the name
+ */
+function recordExportFile(
+	exportFiles: Record<string, string[]>,
+	name: string,
+	file: string
+): void {
+	const files = exportFiles[name] ?? (exportFiles[name] = [])
+	if (!files.includes(file)) {
+		files.push(file)
+		files.sort()
+	}
+}
+
 /**
  * Recursively finds all exports in a package by scanning all TypeScript files
  *
@@ -360,7 +441,7 @@ export async function isBarrelFile(
  * @param {FindExportsParams} params - Parameters for finding exports
  * @returns {Promise<ExportInfo[]>} Array of export information, including source file and exported names
  */
-async function findExports({
+export async function findExports({
 	packagePath,
 	ignoreSourceFiles = [],
 	stats,
@@ -435,10 +516,7 @@ async function findExports({
 									fileExportSources[exportName] = file
 
 									// Track all files that export this symbol
-									if (!exportFiles[exportName]) {
-										exportFiles[exportName] = []
-									}
-									exportFiles[exportName].push(file)
+									recordExportFile(exportFiles, exportName, file)
 								}
 							})
 							return
@@ -454,10 +532,7 @@ async function findExports({
 								fileExportSources[name] = file
 
 								// Track all files that export this symbol
-								if (!exportFiles[name]) {
-									exportFiles[name] = []
-								}
-								exportFiles[name].push(file)
+								recordExportFile(exportFiles, name, file)
 							})
 						}
 					}
@@ -484,10 +559,7 @@ async function findExports({
 										)
 
 										// Track all files that export this symbol
-										if (!exportFiles[exportName]) {
-											exportFiles[exportName] = []
-										}
-										exportFiles[exportName].push(file)
+										recordExportFile(exportFiles, exportName, file)
 									}
 								}
 								return exportName
@@ -525,10 +597,14 @@ async function findExports({
 				}
 			})
 
-			if (fileExports.length > 0 || Object.keys(reExports).length > 0) {
+			// A name can be reached more than once in a file (for example a value
+			// re-export paired with a type re-export); report it only once.
+			const uniqueFileExports = Array.from(new Set(fileExports))
+
+			if (uniqueFileExports.length > 0 || Object.keys(reExports).length > 0) {
 				exports.push({
 					source: file,
-					exports: fileExports,
+					exports: uniqueFileExports,
 					isIgnored,
 					...(Object.keys(reExports).length > 0 && { reExports }),
 					...(Object.keys(fileExportSources).length > 0 && {
@@ -540,8 +616,10 @@ async function findExports({
 				})
 
 				// Print exports in a single line
-				if (fileExports.length > 0) {
-					console.log(`Found exports ${fileExports.join(', ')} in ${file}`)
+				if (uniqueFileExports.length > 0) {
+					console.log(
+						`Found exports ${uniqueFileExports.join(', ')} in ${file}`
+					)
 				}
 			}
 		} catch (error) {
@@ -767,27 +845,11 @@ async function updateImports({
 							}
 						}
 
-						// Find the best source file for this export
-						const exportFilesList = exportInfo.exportFiles?.[importName] || []
-						let bestSourceFile = exportFilesList[0] // Default to first file if no better option
-
-						// Prefer main source files over auxiliary files
-						if (exportFilesList.length > 1) {
-							// Remove story files, test files, and other auxiliary files from consideration
-							const mainFiles = exportFilesList.filter(
-								(file: string) =>
-									!file.includes('.stories.') &&
-									!file.includes('.test.') &&
-									!file.includes('.spec.') &&
-									!file.includes('.stories/') &&
-									!file.includes('.test/') &&
-									!file.includes('.spec/')
-							)
-
-							if (mainFiles.length > 0) {
-								bestSourceFile = mainFiles[0]
-							}
-						}
+						// Resolve the single canonical source file for this export
+						const bestSourceFile = resolveExportSource({
+							name: importName,
+							exports
+						})
 
 						if (bestSourceFile) {
 							const sourcePath = includeExtension
