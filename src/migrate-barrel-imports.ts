@@ -81,6 +81,19 @@ export interface ExportInfo {
 	exportFiles?: Record<string, string[]>
 }
 
+/**
+ * Counters for a single migration run
+ *
+ * Semantics: `*Found` counts candidates discovered, `*Processed` counts
+ * candidates actually examined, and `*Skipped` counts candidates excluded
+ * before examination. Target file counters count distinct files across the
+ * whole run, so a file importing from several source packages counts once.
+ *
+ * Invariants:
+ * - sourcePackagesFound = sourcePackagesProcessed + sourcePackagesSkipped
+ * - targetFilesFound = targetFilesProcessed + targetFilesFailed
+ * - targetFilesProcessed = importsUpdated + noChangesNeeded
+ */
 export interface MigrationStats {
 	sourcePackagesFound: number
 	sourcePackagesProcessed: number
@@ -94,6 +107,7 @@ export interface MigrationStats {
 	importsUpdated: number
 	noChangesNeeded: number
 	targetFilesSkipped: number
+	targetFilesFailed: number
 	importsMigrated: number
 }
 
@@ -158,6 +172,17 @@ export interface MigrationResult {
 	skippedFiles: string[]
 }
 
+/**
+ * Target files that import from a package, split by whether they are ignored
+ *
+ * @property {string[]} files - Candidate files to migrate
+ * @property {string[]} skipped - Candidate files excluded by ignore patterns
+ */
+interface FindImportsResult {
+	files: string[]
+	skipped: string[]
+}
+
 interface ImportSpec {
 	local: ImportSpecifier['local']
 	imported: ImportSpecifier['imported']
@@ -206,6 +231,17 @@ function recordParseError({
 	}
 
 	parseErrors?.push({ filePath, message })
+}
+
+/**
+ * Outcome of examining a single target file
+ *
+ * @property {'updated' | 'unchanged' | 'failed'} status - What happened to the file
+ * @property {number} importsMigrated - Number of import specifiers rewritten
+ */
+interface UpdateImportsResult {
+	status: 'updated' | 'unchanged' | 'failed'
+	importsMigrated: number
 }
 
 /**
@@ -542,7 +578,7 @@ export async function findExports({
 	logger.verbose(`Found ${allFiles.length} files`)
 
 	if (stats) {
-		stats.sourceFilesFound = allFiles.length
+		stats.sourceFilesFound += allFiles.length
 	}
 
 	// First pass: identify barrel files
@@ -733,7 +769,7 @@ export async function findExports({
  * 5. Filters out files matching ignore patterns
  *
  * @param {FindImportsParams} params - Parameters for finding imports
- * @returns {Promise<string[]>} Array of file paths that import from the package
+ * @returns {Promise<FindImportsResult>} Candidate and skipped file paths
  */
 async function findImports({
 	packageName,
@@ -742,10 +778,8 @@ async function findImports({
 	logger = defaultLogger,
 	ignoreTargetFiles = [],
 	sourcePackagePaths = [],
-	stats,
-	parseErrors,
-	skippedFiles
-}: FindImportsParams): Promise<string[]> {
+	parseErrors
+}: FindImportsParams): Promise<FindImportsResult> {
 	try {
 		const allFiles = new Set<string>()
 
@@ -779,20 +813,6 @@ async function findImports({
 
 		// Scan each file for imports
 		for (const file of targetFiles) {
-			// Check if file matches any ignore pattern
-			const relativePath = path.relative(targetPath, file)
-			if (
-				ignoreTargetFiles.some((pattern) =>
-					micromatch.isMatch(relativePath, pattern)
-				)
-			) {
-				skippedFiles?.push(file)
-				if (stats) {
-					stats.targetFilesSkipped++
-				}
-				continue
-			}
-
 			try {
 				const content = await readFile(file, 'utf-8')
 				const ast = parse(content, getBabelConfig(file))
@@ -820,6 +840,21 @@ async function findImports({
 			}
 		}
 
+		// Candidates that match an ignore pattern are skipped, not found
+		const skipped: string[] = []
+		for (const file of allFiles) {
+			const relativePath = path.relative(targetPath, file)
+			if (
+				ignoreTargetFiles.some((pattern) =>
+					micromatch.isMatch(relativePath, pattern)
+				)
+			) {
+				console.log(`File matches ignore pattern, skipping: ${relativePath}`)
+				allFiles.delete(file)
+				skipped.push(file)
+			}
+		}
+
 		const uniqueFiles = Array.from(allFiles)
 		if (uniqueFiles.length > 0) {
 			logger.verbose(
@@ -833,10 +868,10 @@ async function findImports({
 			logger.verbose(`No files found importing from ${packageName}`)
 		}
 
-		return uniqueFiles
+		return { files: uniqueFiles, skipped }
 	} catch (error) {
 		logger.error(`Error finding imports: ${formatError(error)}`)
-		return []
+		return { files: [], skipped: [] }
 	}
 }
 
@@ -924,7 +959,7 @@ function isInsideAnyDirectory(
  * 5. Only modifies the file if changes are needed
  *
  * @param {UpdateImportsParams} params - Parameters for updating imports
- * @returns {Promise<void>}
+ * @returns {Promise<UpdateImportsResult>} Outcome and number of rewritten imports
  */
 async function updateImports({
 	filePath,
@@ -934,12 +969,12 @@ async function updateImports({
 	includeExtension = true,
 	dryRun = false,
 	warnings,
-	stats,
 	parseErrors,
 	changedFiles
-}: UpdateImportsParams): Promise<void> {
+}: UpdateImportsParams): Promise<UpdateImportsResult> {
 	logger.verbose(`\nProcessing file: ${filePath}`)
 	let modified = false
+	let importsMigrated = 0
 
 	try {
 		const content = await readFile(filePath, 'utf-8')
@@ -1045,9 +1080,7 @@ async function updateImports({
 						stringLiteral(source)
 					)
 				)
-				if (stats) {
-					stats.importsMigrated += specifiers.length
-				}
+				importsMigrated += specifiers.length
 			}
 		}
 
@@ -1138,9 +1171,7 @@ async function updateImports({
 
 			reExportPath.replaceWithMultiple(replacements)
 			modified = true
-			if (stats) {
-				stats.importsMigrated += movedCount
-			}
+			importsMigrated += movedCount
 		}
 
 		if (modified) {
@@ -1168,14 +1199,14 @@ async function updateImports({
 			}
 
 			changedFiles?.push(filePath)
-			if (stats) {
-				stats.importsUpdated++
-			}
-		} else if (stats) {
-			stats.noChangesNeeded++
+
+			return { status: 'updated', importsMigrated }
 		}
+
+		return { status: 'unchanged', importsMigrated }
 	} catch (error) {
 		recordParseError({ filePath, error, parseErrors, logger })
+		return { status: 'failed', importsMigrated }
 	}
 }
 
@@ -1191,7 +1222,7 @@ async function updateImports({
  *    - Updates each import to point directly to source files
  *
  * @param {Options} options - Migration configuration options
- * @returns {Promise<void>}
+ * @returns {Promise<MigrationStats>} Statistics for the whole migration run
  */
 export async function migrateBarrelImports(
 	options: MigrationOptions,
@@ -1205,6 +1236,7 @@ export async function migrateBarrelImports(
 		sourcePath,
 		targetPath,
 		targetGlob,
+		ignoreSourceFiles,
 		ignoreTargetFiles,
 		includeExtension = true,
 		includeBarrels = false,
@@ -1225,8 +1257,15 @@ export async function migrateBarrelImports(
 		importsUpdated: 0,
 		noChangesNeeded: 0,
 		targetFilesSkipped: 0,
+		targetFilesFailed: 0,
 		importsMigrated: 0
 	}
+
+	// Target files are counted once per run, not once per source package
+	const candidateFiles = new Set<string>()
+	const skippedFiles = new Set<string>()
+	const examinedFiles = new Set<string>()
+	const updatedFiles = new Set<string>()
 
 	// Track warnings
 	const warnings: string[] = []
@@ -1236,7 +1275,6 @@ export async function migrateBarrelImports(
 
 	// Track which target files this run rewrote and which it left alone
 	const changedFiles: string[] = []
-	const skippedFiles: string[] = []
 
 	if (dryRun) {
 		logger.info('[dry-run] Running in dry-run mode, no files will be modified')
@@ -1250,18 +1288,24 @@ export async function migrateBarrelImports(
 		for (const packagePath of sourcePackages) {
 			logger.verbose(`\nProcessing package: ${packagePath}`)
 
-			// Read the package name first, so an unreadable package.json only skips
-			// this package instead of aborting the whole migration
-			let packageName: string
+			// Read the package name first, so an unreadable or unnamed package.json
+			// only skips this package instead of aborting the whole migration
+			const packageJsonPath = path.join(packagePath, 'package.json')
+			let packageName: string | null
 			try {
 				packageName = await getPackageName(packagePath)
 			} catch (error) {
 				recordParseError({
-					filePath: path.join(packagePath, 'package.json'),
+					filePath: packageJsonPath,
 					error,
 					parseErrors,
 					logger
 				})
+				stats.sourcePackagesSkipped++
+				continue
+			}
+			if (packageName === null) {
+				logger.warn(`Skipping package without a readable name: ${packagePath}`)
 				stats.sourcePackagesSkipped++
 				continue
 			}
@@ -1270,14 +1314,17 @@ export async function migrateBarrelImports(
 			const exports = await findExports({
 				packagePath,
 				logger,
+				ignoreSourceFiles,
 				stats,
 				parseErrors
 			})
-			stats.exportsFound = exports.reduce(
+			// Ignored files keep their barrel import, so their exports are not migrated
+			const migratableExports = exports.filter((info) => !info.isIgnored)
+			stats.exportsFound += migratableExports.reduce(
 				(total, info) => total + info.exports.length,
 				0
 			)
-			stats.sourceFilesWithExports = exports.length
+			stats.sourceFilesWithExports += migratableExports.length
 
 			// Find files that import from this package
 			const targetFiles = await findImports({
@@ -1287,14 +1334,13 @@ export async function migrateBarrelImports(
 				logger,
 				ignoreTargetFiles,
 				sourcePackagePaths: sourcePackages,
-				stats,
-				parseErrors,
-				skippedFiles
+				parseErrors
 			})
-			stats.targetFilesFound = targetFiles.length
+			targetFiles.files.forEach((filePath) => candidateFiles.add(filePath))
+			targetFiles.skipped.forEach((filePath) => skippedFiles.add(filePath))
 
 			// Update imports in target files
-			for (const filePath of targetFiles) {
+			for (const filePath of targetFiles.files) {
 				// Rewriting a barrel's own re-exports changes what its package
 				// exposes, so barrels are left alone unless explicitly opted in
 				if (
@@ -1304,13 +1350,11 @@ export async function migrateBarrelImports(
 					logger.verbose(
 						`Skipping barrel file (use --include-barrels to rewrite it): ${filePath}`
 					)
-					skippedFiles.push(filePath)
-					stats.targetFilesSkipped++
+					skippedFiles.add(filePath)
 					continue
 				}
 
-				stats.targetFilesProcessed++
-				await updateImports({
+				const result = await updateImports({
 					filePath,
 					packageName,
 					exports,
@@ -1318,10 +1362,19 @@ export async function migrateBarrelImports(
 					includeExtension,
 					dryRun,
 					warnings,
-					stats,
 					parseErrors,
 					changedFiles
 				})
+				stats.importsMigrated += result.importsMigrated
+
+				if (result.status === 'failed') {
+					continue
+				}
+
+				examinedFiles.add(filePath)
+				if (result.status === 'updated') {
+					updatedFiles.add(filePath)
+				}
 			}
 
 			stats.sourcePackagesProcessed++
@@ -1331,6 +1384,14 @@ export async function migrateBarrelImports(
 		for (const { filePath, message } of parseErrors) {
 			warnings.push(`Skipped ${filePath}: failed to parse: ${message}`)
 		}
+
+		// Derive the target file counters so they cannot contradict each other
+		stats.targetFilesFound = candidateFiles.size
+		stats.targetFilesSkipped = skippedFiles.size
+		stats.targetFilesProcessed = examinedFiles.size
+		stats.importsUpdated = updatedFiles.size
+		stats.noChangesNeeded = examinedFiles.size - updatedFiles.size
+		stats.targetFilesFailed = candidateFiles.size - examinedFiles.size
 
 		// Print migration summary
 		logger.summary('\nMigration Summary')
@@ -1353,8 +1414,16 @@ export async function migrateBarrelImports(
 			`Target files with no changes needed: ${stats.noChangesNeeded}`
 		)
 		logger.summary(`Target files skipped: ${stats.targetFilesSkipped}`)
+		logger.summary(`Target files failed: ${stats.targetFilesFailed}`)
 		logger.summary(`Total imports migrated: ${stats.importsMigrated}`)
 		logger.summary(`Files that could not be parsed: ${parseErrors.length}`)
+
+		if (parseErrors.length > 0) {
+			logger.summary('Unparseable files:')
+			parseErrors.forEach(({ filePath, message }) =>
+				logger.summary(`  - ${filePath}: ${message}`)
+			)
+		}
 
 		if (parseErrors.length > 0) {
 			logger.summary('Unparseable files:')
@@ -1374,7 +1443,7 @@ export async function migrateBarrelImports(
 			warnings,
 			parseErrors,
 			changedFiles,
-			skippedFiles
+			skippedFiles: Array.from(skippedFiles).sort()
 		}
 	} catch (error) {
 		logger.error(`Error during migration: ${formatError(error)}`)
@@ -1386,12 +1455,14 @@ export async function migrateBarrelImports(
  * Gets the package name from package.json
  *
  * @param {string} packagePath - Path to the package directory
- * @returns {Promise<string>} Package name
+ * @returns {Promise<string | null>} Package name, or null when it has none
  */
-async function getPackageName(packagePath: string): Promise<string> {
+async function getPackageName(packagePath: string): Promise<string | null> {
 	const packageJsonPath = path.join(packagePath, 'package.json')
 	const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'))
-	return packageJson.name
+	return typeof packageJson.name === 'string' && packageJson.name.length > 0
+		? packageJson.name
+		: null
 }
 
 /**
