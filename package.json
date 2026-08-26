@@ -1,6 +1,6 @@
 {
 	"name": "migrate-barrel-imports",
-	"version": "4.0.0",
+	"version": "4.0.1",
 	"description": "A CLI tool to migrate barrel imports in JavaScript/TypeScript monorepos",
 	"keywords": [
 		"barrel",
