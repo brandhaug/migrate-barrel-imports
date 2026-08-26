@@ -1443,7 +1443,7 @@ export async function migrateBarrelImports(
 			warnings,
 			parseErrors,
 			changedFiles,
-			skippedFiles: Array.from(skippedFiles).sort()
+			skippedFiles: Array.from(skippedFiles).toSorted()
 		}
 	} catch (error) {
 		logger.error(`Error during migration: ${formatError(error)}`)
