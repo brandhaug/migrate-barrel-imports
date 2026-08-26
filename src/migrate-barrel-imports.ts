@@ -198,7 +198,6 @@ interface UpdateImportsParams {
 	warnings?: string[]
 	stats?: MigrationStats
 	parseErrors?: ParseError[]
-	changedFiles?: string[]
 }
 
 /** Logger used when a caller does not supply one. */
@@ -946,8 +945,7 @@ async function updateImports({
 	includeExtension = true,
 	dryRun = false,
 	warnings,
-	parseErrors,
-	changedFiles
+	parseErrors
 }: UpdateImportsParams): Promise<UpdateImportsResult> {
 	logger.verbose(`\nProcessing file: ${filePath}`)
 	let modified = false
@@ -1175,8 +1173,6 @@ async function updateImports({
 				logger.verbose(`Writing changes to ${filePath}`)
 			}
 
-			changedFiles?.push(filePath)
-
 			return { status: 'updated', importsMigrated }
 		}
 
@@ -1249,9 +1245,6 @@ export async function migrateBarrelImports(
 
 	// Track files that could not be parsed
 	const parseErrors: ParseError[] = []
-
-	// Track which target files this run rewrote and which it left alone
-	const changedFiles: string[] = []
 
 	if (dryRun) {
 		logger.info('[dry-run] Running in dry-run mode, no files will be modified')
@@ -1341,8 +1334,7 @@ export async function migrateBarrelImports(
 					includeExtension,
 					dryRun,
 					warnings,
-					parseErrors,
-					changedFiles
+					parseErrors
 				})
 				stats.importsMigrated += result.importsMigrated
 
@@ -1421,7 +1413,7 @@ export async function migrateBarrelImports(
 			stats,
 			warnings,
 			parseErrors,
-			changedFiles,
+			changedFiles: Array.from(updatedFiles).toSorted(),
 			skippedFiles: Array.from(skippedFiles).toSorted()
 		}
 	} catch (error) {
