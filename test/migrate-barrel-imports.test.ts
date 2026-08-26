@@ -1001,3 +1001,255 @@ export const VERSION = '1.0.0'
 		expect(await isBarrelFile({ filePath, packagePath })).toBe(false)
 	})
 })
+
+describe.concurrent('unparseable files', (): void => {
+	it('skips a target file that cannot be parsed and migrates the rest', async () => {
+		const { monorepoDir, sourceDir, targetDir } =
+			createTestSetup('unparseable-target')
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/utils.ts': `export const add = (a: number, b: number): number => a + b;\n`,
+			'src/index.ts': `export * from "./utils";\n`
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		const brokenFile = path.join(targetDir, 'src/a-broken.ts')
+		fs.writeFileSync(
+			brokenFile,
+			`import { add } from "@test/source-lib";\nconst broken = >>>;\n`
+		)
+		fs.writeFileSync(
+			path.join(targetDir, 'src/b-good.ts'),
+			`import { add } from "@test/source-lib";\nexport const sum = add(1, 2);\n`
+		)
+
+		const result = await migrateBarrelImports({
+			...defaultOptions,
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		expect(result.parseErrors.map(({ filePath }) => filePath)).toContain(
+			brokenFile
+		)
+
+		const goodContent = cleanOutput(
+			fs.readFileSync(path.join(targetDir, 'src/b-good.ts'), 'utf-8')
+		)
+		expect(goodContent).toContain(
+			'import { add } from "@test/source-lib/src/utils.ts"'
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('skips a source file that cannot be parsed and still migrates exports from the rest', async () => {
+		const { monorepoDir, sourceDir, targetDir } =
+			createTestSetup('unparseable-source')
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/utils.ts': `export const add = (a: number, b: number): number => a + b;\n`,
+			'src/broken.ts': `export const broken = >>>;\n`,
+			'src/index.ts': `export * from "./utils";\nexport * from "./broken";\n`
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/consumer.ts'),
+			`import { add } from "@test/source-lib";\nexport const sum = add(1, 2);\n`
+		)
+
+		const result = await migrateBarrelImports({
+			...defaultOptions,
+			sourcePath: sourceDir,
+			targetPath: targetDir,
+			includeExtension: true
+		})
+
+		expect(result.parseErrors.map(({ filePath }) => filePath)).toContain(
+			path.join(sourceDir, 'src/broken.ts')
+		)
+
+		const consumerContent = cleanOutput(
+			fs.readFileSync(path.join(targetDir, 'src/consumer.ts'), 'utf-8')
+		)
+		expect(consumerContent).toContain(
+			'import { add } from "@test/source-lib/src/utils.ts"'
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('reports each unparseable file only once', async () => {
+		const { monorepoDir, sourceDir, targetDir } =
+			createTestSetup('unparseable-dedupe')
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/utils.ts': `export const add = (a: number, b: number): number => a + b;\n`,
+			'src/broken.ts': `export const broken = >>>;\n`,
+			'src/index.ts': `export * from "./utils";\n`
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/consumer.ts'),
+			`import { add } from "@test/source-lib";\nexport const sum = add(1, 2);\n`
+		)
+
+		const result = await migrateBarrelImports({
+			...defaultOptions,
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		const brokenPath = path.join(sourceDir, 'src/broken.ts')
+		const occurrences = result.parseErrors.filter(
+			({ filePath }) => filePath === brokenPath
+		)
+		expect(occurrences).toHaveLength(1)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('adds each unparseable file to the warnings', async () => {
+		const { monorepoDir, sourceDir, targetDir } = createTestSetup(
+			'unparseable-warnings'
+		)
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/utils.ts': `export const add = (a: number, b: number): number => a + b;\n`,
+			'src/index.ts': `export * from "./utils";\n`
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		const brokenFile = path.join(targetDir, 'src/broken.ts')
+		fs.writeFileSync(
+			brokenFile,
+			`import { add } from "@test/source-lib";\nconst broken = >>>;\n`
+		)
+
+		const result = await migrateBarrelImports({
+			...defaultOptions,
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		expect(
+			result.warnings.some(
+				(warning) =>
+					warning.includes(brokenFile) && warning.includes('failed to parse')
+			)
+		).toBe(true)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('reports the number of unparseable files in the migration summary', async () => {
+		const { monorepoDir, sourceDir, targetDir } = createTestSetup(
+			'unparseable-summary'
+		)
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, {
+			'src/utils.ts': `export const add = (a: number, b: number): number => a + b;\n`,
+			'src/index.ts': `export * from "./utils";\n`
+		})
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/broken.ts'),
+			`import { add } from "@test/source-lib";\nconst broken = >>>;\n`
+		)
+
+		const lines: string[] = []
+		const originalLog = console.log
+		console.log = (...args: unknown[]): void => {
+			lines.push(args.map(String).join(' '))
+		}
+
+		try {
+			await migrateBarrelImports({
+				...defaultOptions,
+				sourcePath: sourceDir,
+				targetPath: monorepoDir,
+				includeExtension: true
+			})
+		} finally {
+			console.log = originalLog
+		}
+
+		expect(lines.join('\n')).toContain('Files that could not be parsed: 1')
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('skips a source package whose package.json cannot be parsed and migrates the rest', async () => {
+		const { monorepoDir, targetDir } = createTestSetup(
+			'unparseable-package-json'
+		)
+		const packagesDir = path.join(monorepoDir, 'packages')
+		const goodLib = path.join(packagesDir, 'good-lib')
+		const brokenLib = path.join(packagesDir, 'broken-lib')
+
+		fs.mkdirSync(path.join(goodLib, 'src'), { recursive: true })
+		fs.mkdirSync(path.join(brokenLib, 'src'), { recursive: true })
+
+		createPackageJson(goodLib, '@test/good-lib')
+		createSourceFiles(goodLib, {
+			'src/utils.ts': `export const add = (a: number, b: number): number => a + b;\n`,
+			'src/index.ts': `export * from "./utils";\n`
+		})
+
+		const brokenPackageJson = path.join(brokenLib, 'package.json')
+		fs.writeFileSync(brokenPackageJson, '{ not valid json')
+		fs.writeFileSync(
+			path.join(brokenLib, 'src/index.ts'),
+			`export const noop = (): void => {};\n`
+		)
+
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/good-lib': '1.0.0'
+		})
+		fs.writeFileSync(
+			path.join(targetDir, 'src/consumer.ts'),
+			`import { add } from "@test/good-lib";\nexport const sum = add(1, 2);\n`
+		)
+
+		const result = await migrateBarrelImports({
+			...defaultOptions,
+			sourcePath: packagesDir,
+			targetPath: targetDir,
+			includeExtension: true
+		})
+
+		expect(result.parseErrors.map(({ filePath }) => filePath)).toContain(
+			brokenPackageJson
+		)
+
+		const consumerContent = cleanOutput(
+			fs.readFileSync(path.join(targetDir, 'src/consumer.ts'), 'utf-8')
+		)
+		expect(consumerContent).toContain(
+			'import { add } from "@test/good-lib/src/utils.ts"'
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+})
