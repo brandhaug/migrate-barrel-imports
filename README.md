@@ -1,15 +1,11 @@
 # migrate-barrel-imports
 
-A CLI tool to migrate barrel imports to direct module imports in JavaScript/TypeScript monorepos.
+A CLI tool that rewrites barrel imports to direct module imports in JavaScript/TypeScript monorepos.
 
 [![npm version](https://img.shields.io/npm/v/migrate-barrel-imports)](https://www.npmjs.com/package/migrate-barrel-imports)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## About
-
 Barrel files (`index.ts` re-exports) hurt build performance, cause circular dependencies, and slow down editor tooling. This CLI rewrites barrel imports across your codebase to point directly at the source modules.
-
-Inspired by [Please Stop Using Barrel Files](https://tkdodo.eu/blog/please-stop-using-barrel-files).
 
 ```typescript
 // Before
@@ -20,23 +16,15 @@ import { foo } from '@repo/package/src/foo'
 import { bar } from '@repo/package/src/bar'
 ```
 
-## Features
-
-- Recursive package discovery: every `package.json` under the source directory is migrated
-- Automatic resolution of re-exported symbols to their source files
-- Configurable file ignore patterns for both source and target directories
-- Optional file extension stripping for bundler-friendly imports
-- Barrel files are skipped as rewrite targets, so a package's public API surface stays intact
-
-## Installation
+## Install
 
 ```bash
 npm install -g migrate-barrel-imports
+# or run without installing:
+npx migrate-barrel-imports <source-path> [target-path] [options]
 ```
 
-### Requirements
-
-- Node.js >= 20
+Requires [bun](https://bun.sh) >= 1.4.0.
 
 ## Usage
 
@@ -44,23 +32,12 @@ npm install -g migrate-barrel-imports
 migrate-barrel-imports <source-path> [target-path] [options]
 ```
 
-Or run without installing:
+| Argument      | Description                                                                    | Default                 |
+| ------------- | ------------------------------------------------------------------------------ | ----------------------- |
+| `source-path` | Directory scanned recursively for packages (e.g. `packages`). Not a glob        | _(required)_            |
+| `target-path` | Directory where imports should be migrated                                     | `.` (current directory) |
 
-```bash
-npx migrate-barrel-imports <source-path> [target-path] [options]
-```
-
-### Arguments
-
-| Argument      | Description                                                                             | Default                 |
-| ------------- | --------------------------------------------------------------------------------------- | ----------------------- |
-| `source-path` | Directory scanned recursively for packages (e.g. `packages`, `libs/my-lib`). Not a glob | _(required)_            |
-| `target-path` | Directory where imports should be migrated                                              | `.` (current directory) |
-
-`source-path` is a directory, not a glob. It is scanned recursively for
-`package.json` files, so `packages` migrates every package below it. Passing a
-pattern such as `packages/*` fails with an error instead of silently finding
-nothing.
+`source-path` is validated as a real directory, not a glob. Passing a pattern such as `packages/*` fails with an error instead of silently finding nothing.
 
 ### Options
 
@@ -77,32 +54,17 @@ nothing.
 | `--json`                           | Print one machine-readable JSON report to stdout                                  | off                           |
 | `-h`, `--help`                     | Show help                                                                         | —                             |
 
-Files inside the source directories are never rewrite targets, so pointing
-`target-path` at a repo root that contains the source packages leaves those
-packages untouched.
+Files inside the source directories are never rewrite targets, so pointing `target-path` at a repo root that contains the source packages leaves those packages untouched.
 
-By default the CLI prints the migration summary and any warnings. `--verbose`
-adds per-file progress, and `-q` / `--quiet` prints the summary alone. Errors
-are always printed. Single log lines longer than 500 characters are truncated
-with an ellipsis, which keeps generated files with thousands of exports from
-flooding the terminal.
+By default the CLI prints the migration summary and any warnings. `--verbose` adds per-file progress; `-q` / `--quiet` prints the summary alone. Errors are always printed. Log lines longer than 500 characters are truncated so generated files with thousands of exports don't flood the terminal.
 
-When arguments or flags are omitted, the CLI falls back to interactive prompts
-for the missing values only, and only when stdin is a TTY. Without a TTY
-(scripts, CI, piped input) it never prompts: `--extension` defaults to on,
-`--dry-run` to off, `target-path` to the current directory, and a missing
-`source-path` exits with code 1 and an error.
+### Interactive vs non-interactive
+
+When arguments are omitted, the CLI prompts for the missing values **only when stdin is a TTY**. Without a TTY (scripts, CI, piped input) it never prompts: `--extension` defaults to on, `--dry-run` to off, `target-path` to the current directory, and a missing `source-path` exits with code 1.
 
 ### JSON output
 
-`--json` makes the CLI print exactly one JSON document to stdout and suppress
-every human-readable line, including the summary and dry-run diffs, so the
-output is safe to pipe into `jq` or parse in CI. It goes through the same logger
-as `--quiet` and `--verbose`, at a `silent` verbosity, and overrides both.
-Errors still go to stderr, where they cannot corrupt the report.
-
-Because there is no interactive fallback in this mode, `source-path` must be
-passed as an argument; without it the CLI exits with code 1.
+`--json` prints exactly one JSON document to stdout and suppresses every human-readable line, including the summary and dry-run diffs, so output is safe to pipe into `jq` or parse in CI. Errors go to stderr, where they cannot corrupt the report. There is no interactive fallback in this mode, so `source-path` must be passed as an argument.
 
 ```bash
 migrate-barrel-imports libs . --json --dry-run | jq '.stats.importsMigrated'
@@ -151,21 +113,11 @@ migrate-barrel-imports libs . --json --dry-run | jq '.stats.importsMigrated'
 
 ### Barrel files as targets
 
-Barrel files are never rewritten by default. Rewriting the `export ... from`
-statements inside a package's own `src/index.ts` changes what that package
-exposes, which silently breaks its public API. A target file counts as a barrel
-when it re-exports and is either named like an entry point (`index.*`), declared
-as one in its `package.json`, or made almost entirely of re-exports. Skipped
-barrels are counted in the run summary under `Target files skipped`, and named
-individually under `--verbose`.
-
-Pass `--include-barrels` to opt in and rewrite them anyway.
+Barrel files are never rewritten by default: rewriting the `export ... from` statements inside a package's own `src/index.ts` would change what the package exposes and silently break its public API. A target file counts as a barrel when it re-exports and is either named like an entry point (`index.*`), declared as one in its `package.json`, or made almost entirely of re-exports. Skipped barrels are counted in the summary under `Target files skipped` and named individually under `--verbose`. Pass `--include-barrels` to rewrite them anyway.
 
 ### Dry run
 
-`--dry-run` writes nothing to disk. For each file it would change, it prints a
-compact unified-style diff of only the import statements that change, so you can
-review the migration before applying it:
+`--dry-run` writes nothing to disk. For each file it would change, it prints a compact unified-style diff of only the import statements that change:
 
 ```diff
 [dry-run] Would update imports in packages/target-app/src/calculator.ts
@@ -179,25 +131,13 @@ review the migration before applying it:
 ### Examples
 
 ```bash
-# Migrate a single package
-migrate-barrel-imports ./packages/my-lib \
+# Migrate a single package, ignoring tests in both source and target
+migrate-barrel-imports packages/ui \
   --ignore-source-files "**/__tests__/**,**/__mocks__/**" \
   --ignore-target-files "**/*.test.ts"
 
-# Migrate every package under a directory
-migrate-barrel-imports libs --no-extension
-
-# Print only the migration summary
-migrate-barrel-imports libs --quiet
-
-# Also rewrite the re-exports inside barrel files
-migrate-barrel-imports libs --include-barrels
-
-# Migrate one package
-migrate-barrel-imports packages/ui --ignore-target-files "**/*.test.ts"
-
-# Scan only the apps/* directories for imports to rewrite
-migrate-barrel-imports libs . --target-glob "apps/*"
+# Only scan apps/* for imports to rewrite, without file extensions
+migrate-barrel-imports libs . --target-glob "apps/*" --no-extension
 
 # Machine-readable report for CI
 migrate-barrel-imports libs . --json --dry-run > report.json
@@ -205,20 +145,18 @@ migrate-barrel-imports libs . --json --dry-run > report.json
 
 ## Contributing
 
-Contributions are welcome! Feel free to [open an issue](https://github.com/brandhaug/migrate-barrel-imports/issues) or submit a pull request.
+Contributions are welcome. Open an [issue](https://github.com/brandhaug/migrate-barrel-imports/issues) or submit a pull request.
 
-### Development Setup
+Development uses [bun](https://bun.sh):
 
 ```bash
 git clone https://github.com/brandhaug/migrate-barrel-imports.git
 cd migrate-barrel-imports
-npm install
-```
-
-### Running Tests
-
-```bash
-npm test
+bun install
+bun test
+npm run build    # tsc -> dist/
+npm run lint     # oxlint
+npm run validate # lint + format check + test
 ```
 
 ## License
