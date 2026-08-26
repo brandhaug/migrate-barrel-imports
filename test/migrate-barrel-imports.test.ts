@@ -10,6 +10,7 @@ import {
 	findExports,
 	migrateBarrelImports,
 	type MigrationResult,
+	type MigrationStats,
 	resolveExportSource
 } from '../src/migrate-barrel-imports'
 import { defaultOptions, type Options } from '../src/options'
@@ -1939,6 +1940,7 @@ describe('migration result', (): void => {
 			importsUpdated: 1,
 			noChangesNeeded: 0,
 			targetFilesSkipped: 0,
+			targetFilesFailed: 0,
 			importsMigrated: 1
 		})
 
@@ -2187,5 +2189,312 @@ describe('source path validation', (): void => {
 		).rejects.toThrow(`Source path is not a directory: ${filePath}`)
 
 		fs.rmSync(filePath, { force: true })
+	})
+})
+
+interface StatsFixtureLib {
+	name: string
+	dir: string
+	files: Record<string, string>
+}
+
+interface StatsFixture {
+	monorepoDir: string
+	libsDir: string
+	appDir: string
+}
+
+const createStatsFixture = (
+	testName: string,
+	libs: StatsFixtureLib[],
+	appFiles: Record<string, string>
+): StatsFixture => {
+	const monorepoDir = path.join(
+		process.env.RUNNER_TEMP || os.tmpdir(),
+		`test-${testName}-${randomUUID()}`
+	)
+	const libsDir = path.join(monorepoDir, 'libs')
+	const appDir = path.join(monorepoDir, 'apps/app')
+
+	libs.forEach((lib) => {
+		const dir = path.join(libsDir, lib.dir)
+		fs.mkdirSync(path.join(dir, 'src'), { recursive: true })
+		createPackageJson(dir, lib.name)
+		createSourceFiles(dir, lib.files)
+	})
+
+	fs.mkdirSync(path.join(appDir, 'src'), { recursive: true })
+	createPackageJson(appDir, '@test/app')
+	createSourceFiles(appDir, appFiles)
+
+	return { monorepoDir, libsDir, appDir }
+}
+
+const libA: StatsFixtureLib = {
+	name: '@test/lib-a',
+	dir: 'lib-a',
+	files: {
+		'src/utils.ts': `
+export const add = (a: number, b: number): number => a + b;
+export const subtract = (a: number, b: number): number => a - b;
+`,
+		'src/index.ts': 'export * from "./utils";'
+	}
+}
+
+const libB: StatsFixtureLib = {
+	name: '@test/lib-b',
+	dir: 'lib-b',
+	files: {
+		'src/config.ts': `
+export const API_URL = "https://api.example.com";
+export const MAX_RETRIES = 3;
+`,
+		'src/index.ts': 'export * from "./config";'
+	}
+}
+
+// No target file imports from this package
+const libC: StatsFixtureLib = {
+	name: '@test/lib-c',
+	dir: 'lib-c',
+	files: {
+		'src/unused.ts': 'export const unused = true;',
+		'src/index.ts': 'export * from "./unused";'
+	}
+}
+
+const appFileA =
+	'import { add } from "@test/lib-a";\nexport const one = add(1, 1);\n'
+const appFileB =
+	'import { API_URL } from "@test/lib-b";\nexport const url = API_URL;\n'
+
+const runStatsFixture = async (
+	fixture: StatsFixture,
+	overrides: Partial<Options> = {}
+): Promise<MigrationStats> =>
+	(
+		await migrateBarrelImports({
+			...defaultOptions,
+			sourcePath: fixture.libsDir,
+			targetPath: fixture.monorepoDir,
+			includeExtension: true,
+			...overrides
+		})
+	).stats
+
+describe.concurrent('migration stats', (): void => {
+	it('returns the stats for a single source package', async () => {
+		const fixture = createStatsFixture('stats-single-package', [libA], {
+			'src/a.ts': appFileA
+		})
+
+		const stats = await runStatsFixture(fixture)
+
+		expect(stats.sourcePackagesFound).toBe(1)
+
+		fs.rmSync(fixture.monorepoDir, { recursive: true, force: true })
+	})
+
+	it('accumulates target file counters across every source package', async () => {
+		const fixture = createStatsFixture(
+			'stats-target-files',
+			[libA, libB, libC],
+			{ 'src/a.ts': appFileA, 'src/b.ts': appFileB }
+		)
+
+		const stats = await runStatsFixture(fixture)
+
+		expect(stats.targetFilesFound).toBe(2)
+		expect(stats.targetFilesProcessed).toBe(2)
+
+		fs.rmSync(fixture.monorepoDir, { recursive: true, force: true })
+	})
+
+	it('counts unnamed source packages as skipped, not processed', async () => {
+		const fixture = createStatsFixture('stats-skipped-packages', [libA], {
+			'src/a.ts': appFileA
+		})
+
+		// A package.json without a name cannot be imported from
+		const namelessDir = path.join(fixture.libsDir, 'lib-nameless')
+		fs.mkdirSync(path.join(namelessDir, 'src'), { recursive: true })
+		fs.writeFileSync(
+			path.join(namelessDir, 'package.json'),
+			JSON.stringify({ version: '1.0.0' })
+		)
+		fs.writeFileSync(
+			path.join(namelessDir, 'src/thing.ts'),
+			'export const thing = true;\n'
+		)
+
+		const stats = await runStatsFixture(fixture)
+
+		expect(stats.sourcePackagesFound).toBe(2)
+		expect(stats.sourcePackagesProcessed).toBe(1)
+		expect(stats.sourcePackagesSkipped).toBe(1)
+		// The skipped package's files are not scanned
+		expect(stats.sourceFilesFound).toBe(2)
+
+		fs.rmSync(fixture.monorepoDir, { recursive: true, force: true })
+	})
+
+	it('counts ignored source files as skipped and excludes them from exports', async () => {
+		const libWithLegacy: StatsFixtureLib = {
+			name: '@test/lib-a',
+			dir: 'lib-a',
+			files: {
+				...libA.files,
+				'src/legacy.ts': 'export const legacy = true;\n',
+				'src/index.ts': 'export * from "./utils";\nexport * from "./legacy";'
+			}
+		}
+
+		const fixture = createStatsFixture(
+			'stats-ignored-sources',
+			[libWithLegacy],
+			{ 'src/a.ts': appFileA }
+		)
+
+		const stats = await runStatsFixture(fixture, {
+			ignoreSourceFiles: ['**/legacy.ts']
+		})
+
+		expect(stats.sourceFilesFound).toBe(3)
+		expect(stats.sourceFilesSkipped).toBe(1)
+		// legacy.ts is skipped, so only utils.ts contributes exports
+		expect(stats.sourceFilesWithExports).toBe(1)
+		expect(stats.exportsFound).toBe(2)
+
+		fs.rmSync(fixture.monorepoDir, { recursive: true, force: true })
+	})
+
+	it('counts a target file importing from two packages once', async () => {
+		const fixture = createStatsFixture('stats-shared-target', [libA, libB], {
+			'src/both.ts':
+				'import { add } from "@test/lib-a";\nimport { API_URL } from "@test/lib-b";\nexport const value = `${API_URL}${add(1, 1)}`;\n'
+		})
+
+		const stats = await runStatsFixture(fixture)
+
+		expect(stats.targetFilesFound).toBe(1)
+		expect(stats.targetFilesProcessed).toBe(1)
+		expect(stats.importsUpdated).toBe(1)
+		expect(stats.noChangesNeeded).toBe(0)
+		// One specifier rewritten per package
+		expect(stats.importsMigrated).toBe(2)
+
+		fs.rmSync(fixture.monorepoDir, { recursive: true, force: true })
+	})
+
+	it('reports a consistent summary for a three package fixture', async () => {
+		const fixture = createStatsFixture('stats-summary', [libA, libB, libC], {
+			'src/a.ts': appFileA,
+			'src/b.ts': appFileB
+		})
+
+		const stats = await runStatsFixture(fixture)
+
+		expect(stats).toEqual({
+			sourcePackagesFound: 3,
+			sourcePackagesProcessed: 3,
+			sourcePackagesSkipped: 0,
+			sourceFilesFound: 6,
+			sourceFilesWithExports: 3,
+			sourceFilesSkipped: 0,
+			exportsFound: 5,
+			targetFilesFound: 2,
+			targetFilesProcessed: 2,
+			importsUpdated: 2,
+			noChangesNeeded: 0,
+			targetFilesSkipped: 0,
+			targetFilesFailed: 0,
+			importsMigrated: 2
+		})
+
+		// Invariants that must hold for any run
+		expect(stats.sourcePackagesFound).toBe(
+			stats.sourcePackagesProcessed + stats.sourcePackagesSkipped
+		)
+		expect(stats.targetFilesFound).toBe(
+			stats.targetFilesProcessed + stats.targetFilesFailed
+		)
+		expect(stats.targetFilesProcessed).toBe(
+			stats.importsUpdated + stats.noChangesNeeded
+		)
+
+		fs.rmSync(fixture.monorepoDir, { recursive: true, force: true })
+	})
+
+	it('reports the same counters in dry-run without touching files', async () => {
+		const fixture = createStatsFixture('stats-dry-run', [libA, libB, libC], {
+			'src/a.ts': appFileA,
+			'src/b.ts': appFileB
+		})
+		const appFilePath = path.join(fixture.appDir, 'src/a.ts')
+
+		const stats = await runStatsFixture(fixture, { dryRun: true })
+
+		expect(stats.targetFilesFound).toBe(2)
+		expect(stats.targetFilesProcessed).toBe(2)
+		expect(stats.importsUpdated).toBe(2)
+		expect(stats.importsMigrated).toBe(2)
+		expect(fs.readFileSync(appFilePath, 'utf-8')).toBe(appFileA)
+
+		fs.rmSync(fixture.monorepoDir, { recursive: true, force: true })
+	})
+
+	it('accumulates source file counters across every source package', async () => {
+		const fixture = createStatsFixture(
+			'stats-source-files',
+			[libA, libB, libC],
+			{ 'src/a.ts': appFileA, 'src/b.ts': appFileB }
+		)
+
+		const stats = await runStatsFixture(fixture)
+
+		// 2 files per package: one module plus one barrel
+		expect(stats.sourceFilesFound).toBe(6)
+
+		fs.rmSync(fixture.monorepoDir, { recursive: true, force: true })
+	})
+
+	it('accumulates export counters across every source package', async () => {
+		const fixture = createStatsFixture('stats-exports', [libA, libB, libC], {
+			'src/a.ts': appFileA,
+			'src/b.ts': appFileB
+		})
+
+		const stats = await runStatsFixture(fixture)
+
+		// Barrel files are not counted, so one file with exports per package
+		expect(stats.sourceFilesWithExports).toBe(3)
+		// 2 exports in lib-a, 2 in lib-b, 1 in lib-c
+		expect(stats.exportsFound).toBe(5)
+
+		fs.rmSync(fixture.monorepoDir, { recursive: true, force: true })
+	})
+
+	it('counts only ignored candidates as skipped target files', async () => {
+		const fixture = createStatsFixture(
+			'stats-ignored-targets',
+			[libA, libB, libC],
+			{
+				'src/a.ts': appFileA,
+				'src/b.ts': appFileB,
+				'src/generated.ts': appFileA
+			}
+		)
+
+		const stats = await runStatsFixture(fixture, {
+			ignoreTargetFiles: ['**/generated.ts']
+		})
+
+		// Only generated.ts is ignored, and only lib-a has it as a candidate
+		expect(stats.targetFilesSkipped).toBe(1)
+		expect(stats.targetFilesFound).toBe(2)
+		expect(stats.targetFilesProcessed).toBe(2)
+
+		fs.rmSync(fixture.monorepoDir, { recursive: true, force: true })
 	})
 })
