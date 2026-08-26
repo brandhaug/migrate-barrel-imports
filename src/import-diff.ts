@@ -6,7 +6,7 @@
  */
 
 import { parse } from '@babel/parser'
-import { BABEL_CONFIG } from './babel-config.js'
+import { getBabelConfig } from './babel-config.js'
 
 interface FormatImportDiffParams {
 	filePath: string
@@ -17,8 +17,8 @@ interface FormatImportDiffParams {
 /**
  * Extracts the verbatim source text of every import statement in a file
  */
-function collectImportStatements(code: string): string[] {
-	const ast = parse(code, BABEL_CONFIG)
+function collectImportStatements(code: string, filePath: string): string[] {
+	const ast = parse(code, getBabelConfig(filePath))
 
 	return ast.program.body
 		.filter((node) => node.type === 'ImportDeclaration')
@@ -40,8 +40,8 @@ export function formatImportDiff({
 	before,
 	after
 }: FormatImportDiffParams): string {
-	const beforeImports = collectImportStatements(before)
-	const afterImports = collectImportStatements(after)
+	const beforeImports = collectImportStatements(before, filePath)
+	const afterImports = collectImportStatements(after, filePath)
 
 	const removed = beforeImports.filter(
 		(statement) => !afterImports.includes(statement)
