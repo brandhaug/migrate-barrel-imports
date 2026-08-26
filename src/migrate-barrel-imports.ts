@@ -32,9 +32,12 @@ import {
 	importDeclaration,
 	importSpecifier,
 	isClassDeclaration,
+	isExportAllDeclaration,
+	isExportNamedDeclaration,
 	isExportSpecifier,
 	isFunctionDeclaration,
 	isIdentifier,
+	isImportDeclaration,
 	isImportDefaultSpecifier,
 	isImportNamespaceSpecifier,
 	isImportSpecifier,
@@ -131,6 +134,16 @@ interface MigrationStats {
 	importsMigrated: number
 }
 
+/**
+ * @property {string} filePath - Path to the file to check
+ * @property {string} [packagePath] - Path to the package the file belongs to,
+ *   used to recognise the package's declared entry points
+ */
+export interface IsBarrelFileParams {
+	filePath: string
+	packagePath?: string
+}
+
 interface FindExportsParams {
 	packagePath: string
 	ignoreSourceFiles?: string[]
@@ -196,28 +209,93 @@ function getExportNames(
 	return []
 }
 
+// Share of non-import statements that must be re-exports for a non-entry-point
+// file to count as a barrel
+const PURE_RE_EXPORT_RATIO = 0.9
+
+const ENTRY_POINT_FILE_NAME_PATTERN =
+	/^index\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)$/
+
+/**
+ * Collects the entry-point file paths a package declares via main, module and exports
+ */
+async function getPackageEntryPoints(packagePath: string): Promise<string[]> {
+	try {
+		const manifest: Record<string, unknown> = JSON.parse(
+			await readFile(path.join(packagePath, 'package.json'), 'utf-8')
+		)
+
+		const entries: string[] = []
+		const collect = (value: unknown): void => {
+			if (typeof value === 'string') {
+				entries.push(path.resolve(packagePath, value))
+				return
+			}
+			if (typeof value === 'object' && value !== null) {
+				Object.values(value).forEach(collect)
+			}
+		}
+
+		;[manifest.main, manifest.module, manifest.exports].forEach(collect)
+
+		return entries
+	} catch {
+		return []
+	}
+}
+
+/**
+ * Checks whether a file is named like a module entry point (index.*)
+ */
+function isEntryPointFileName(filePath: string): boolean {
+	return ENTRY_POINT_FILE_NAME_PATTERN.test(path.basename(filePath))
+}
+
 /**
  * Checks if a file is a barrel file by analyzing its exports
  *
- * @param {string} filePath - Path to the file to check
+ * @param {IsBarrelFileParams} params - Parameters for the check
  * @returns {Promise<boolean>} Whether the file is a barrel file
  */
-async function isBarrelFile(filePath: string): Promise<boolean> {
+export async function isBarrelFile({
+	filePath,
+	packagePath
+}: IsBarrelFileParams): Promise<boolean> {
 	try {
 		const content = await readFile(filePath, 'utf-8')
 		const ast = parse(content, getBabelConfig(filePath))
-		let hasReExports = false
 
-		traverse(ast, {
-			ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
-				if (path.node.source) {
-					hasReExports = true
-				}
+		let reExportCount = 0
+		let otherStatementCount = 0
+
+		for (const statement of ast.program.body) {
+			if (isImportDeclaration(statement)) continue
+
+			if (
+				isExportAllDeclaration(statement) ||
+				(isExportNamedDeclaration(statement) && statement.source)
+			) {
+				reExportCount++
+				continue
 			}
-		})
 
-		// A barrel file typically has re-exports and may or may not have direct exports
-		return hasReExports
+			otherStatementCount++
+		}
+
+		if (reExportCount === 0) return false
+
+		// Entry-point files re-exporting anything are barrels regardless of content
+		if (isEntryPointFileName(filePath)) return true
+
+		if (packagePath) {
+			const entryPoints = await getPackageEntryPoints(packagePath)
+			const resolvedPath = path.resolve(filePath)
+			if (entryPoints.includes(resolvedPath)) return true
+		}
+
+		// Otherwise substantially all statements must be pure re-exports
+		const total = reExportCount + otherStatementCount
+		return reExportCount / total >= PURE_RE_EXPORT_RATIO
 	} catch (error) {
 		console.error(`Error checking if ${filePath} is a barrel file:`, error)
 		return false
@@ -260,7 +338,7 @@ async function findExports({
 	// First pass: identify barrel files
 	for (const file of allFiles) {
 		const fullPath = path.join(packagePath, file)
-		if (await isBarrelFile(fullPath)) {
+		if (await isBarrelFile({ filePath: fullPath, packagePath })) {
 			barrelFiles.add(file)
 			console.log(`Identified barrel file: ${file}`)
 		}

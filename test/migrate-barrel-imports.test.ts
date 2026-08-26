@@ -3,7 +3,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'bun:test'
-import { migrateBarrelImports } from '../src/migrate-barrel-imports'
+import {
+	isBarrelFile,
+	migrateBarrelImports
+} from '../src/migrate-barrel-imports'
 import { defaultOptions, type Options } from '../src/options'
 
 interface TestSetup {
@@ -894,5 +897,107 @@ export const sum = (a: number, b: number): number => add(a, b);
 		)
 
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+})
+
+const createBarrelTestFile = (
+	relativePath: string,
+	content: string
+): string => {
+	const dir = path.join(
+		process.env.RUNNER_TEMP || os.tmpdir(),
+		`barrel-detection-${randomUUID()}`
+	)
+	const filePath = path.join(dir, relativePath)
+	fs.mkdirSync(path.dirname(filePath), { recursive: true })
+	fs.writeFileSync(filePath, content)
+	return filePath
+}
+
+describe('isBarrelFile', () => {
+	it('treats an index file of re-exports as a barrel', async () => {
+		const filePath = createBarrelTestFile(
+			'src/index.ts',
+			`export { Button } from './Button'
+export * from './helpers'
+export type { ButtonProps } from './Button'
+`
+		)
+
+		expect(await isBarrelFile({ filePath })).toBe(true)
+	})
+
+	it('does not treat a component file with local JSX as a barrel', async () => {
+		const filePath = createBarrelTestFile(
+			'src/features/Rbac/Assignments/RoleTogglePopover.tsx',
+			`import { useState } from 'react'
+
+export { RoleToggleContext } from './RoleToggleContext'
+
+export const RoleTogglePopover = (): JSX.Element => {
+	const [open, setOpen] = useState(false)
+
+	return <div onClick={() => setOpen(!open)}>{open ? 'open' : 'closed'}</div>
+}
+`
+		)
+
+		expect(await isBarrelFile({ filePath })).toBe(false)
+	})
+
+	it('does not treat a file mixing re-exports with declarations as a barrel', async () => {
+		const filePath = createBarrelTestFile(
+			'src/utils/mixed.ts',
+			`export { formatDate } from './formatDate'
+export * from './constants'
+
+export const DEFAULT_LOCALE = 'en-US'
+
+export function parseDate(input: string): Date {
+	return new Date(input)
+}
+`
+		)
+
+		expect(await isBarrelFile({ filePath })).toBe(false)
+	})
+
+	it('treats the package main entry as a barrel even with a local declaration', async () => {
+		const filePath = createBarrelTestFile(
+			'src/entry.ts',
+			`export { Button } from './Button'
+export * from './helpers'
+
+export const VERSION = '1.0.0'
+`
+		)
+		const packagePath = path.resolve(path.dirname(filePath), '..')
+		fs.writeFileSync(
+			path.join(packagePath, 'package.json'),
+			JSON.stringify({
+				name: '@test/lib',
+				main: './src/entry.ts',
+				exports: { '.': './src/entry.ts' }
+			})
+		)
+
+		expect(await isBarrelFile({ filePath, packagePath })).toBe(true)
+	})
+
+	it('does not treat a non-entry file of mixed content as a barrel even with a package entry', async () => {
+		const filePath = createBarrelTestFile(
+			'src/entry.ts',
+			`export { Button } from './Button'
+
+export const VERSION = '1.0.0'
+`
+		)
+		const packagePath = path.resolve(path.dirname(filePath), '..')
+		fs.writeFileSync(
+			path.join(packagePath, 'package.json'),
+			JSON.stringify({ name: '@test/lib', main: './src/other.ts' })
+		)
+
+		expect(await isBarrelFile({ filePath, packagePath })).toBe(false)
 	})
 })
