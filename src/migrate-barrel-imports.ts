@@ -18,7 +18,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import _generate from '@babel/generator'
-import type { ParserOptions } from '@babel/parser'
 import { parse } from '@babel/parser'
 import type { NodePath } from '@babel/traverse'
 import _traverse from '@babel/traverse'
@@ -50,6 +49,8 @@ import {
 } from '@babel/types'
 import fg from 'fast-glob'
 import micromatch from 'micromatch'
+import { getBabelConfig } from './babel-config.js'
+import { formatImportDiff } from './import-diff.js'
 import type { Options as MigrationOptions } from './options.js'
 
 // @ts-expect-error
@@ -57,46 +58,7 @@ const generate: typeof _generate = _generate.default || _generate
 // @ts-expect-error
 const traverse: typeof _traverse = _traverse.default || _traverse
 
-// Common Babel configuration for parsing TypeScript files
-const BABEL_CONFIG: ParserOptions = {
-	sourceType: 'module',
-	plugins: [
-		'typescript',
-		'decorators-legacy',
-		'exportDefaultFrom',
-		'functionBind',
-		'functionSent',
-		'doExpressions',
-		'importMeta',
-		'moduleBlocks',
-		'partialApplication',
-		'throwExpressions'
-	]
-}
-
-// Extensions where `<` starts JSX rather than a type parameter list. Enabling
-// the jsx plugin for plain .ts files breaks generic arrow functions such as
-// `<T>(value: T) => value`.
-const JSX_EXTENSIONS = new Set(['.jsx', '.tsx'])
-
 /**
- * Builds the Babel parser options for a file, enabling the jsx plugin only for
- * .jsx/.tsx files.
- *
- * @param {string} filePath - Path of the file being parsed
- * @returns {ParserOptions} Parser options for that file
- */
-function getBabelConfig(filePath: string): ParserOptions {
-	if (!JSX_EXTENSIONS.has(path.extname(filePath))) {
-		return BABEL_CONFIG
-	}
-
-	return {
-		...BABEL_CONFIG,
-		plugins: [...(BABEL_CONFIG.plugins ?? []), 'jsx']
-	}
-}
-
 /**
  * @property {string} source - Source file path containing exports
  * @property {string[]} exports - Array of exported names from the file
@@ -955,6 +917,12 @@ async function updateImports({
 
 			if (dryRun) {
 				console.log(`[dry-run] Would update imports in ${filePath}`)
+				const diff = formatImportDiff({
+					filePath,
+					before: content,
+					after: output
+				})
+				if (diff) console.log(diff)
 			} else {
 				await writeFile(filePath, output)
 				console.log(`Writing changes to ${filePath}`)
