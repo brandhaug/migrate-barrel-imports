@@ -68,6 +68,7 @@ npx migrate-barrel-imports <source-path> [target-path] [options]
 | `--dry-run`                        | Preview changes as a diff without modifying files             | off           |
 | `-q`, `--quiet`                    | Print only the migration summary                              | off           |
 | `--verbose`                        | Print per-file progress in addition to the summary            | off           |
+| `--json`                           | Print one machine-readable JSON report to stdout              | off           |
 | `-h`, `--help`                     | Show help                                                     | —             |
 
 By default the CLI prints the migration summary and any warnings. `--verbose`
@@ -75,6 +76,62 @@ adds per-file progress, and `-q` / `--quiet` prints the summary alone. Errors
 are always printed. Single log lines longer than 500 characters are truncated
 with an ellipsis, which keeps generated files with thousands of exports from
 flooding the terminal.
+
+### JSON output
+
+`--json` makes the CLI print exactly one JSON document to stdout and suppress
+every human-readable line, including the summary and dry-run diffs, so the
+output is safe to pipe into `jq` or parse in CI. It goes through the same logger
+as `--quiet` and `--verbose`, at a `silent` verbosity, and overrides both.
+Errors still go to stderr, where they cannot corrupt the report.
+
+Because there is no interactive fallback in this mode, `source-path` must be
+passed as an argument; without it the CLI exits with code 1.
+
+```bash
+migrate-barrel-imports "libs/*" . --json --dry-run | jq '.stats.importsMigrated'
+```
+
+```json
+{
+	"mode": "dry-run",
+	"stats": {
+		"sourcePackagesFound": 1,
+		"sourcePackagesProcessed": 1,
+		"sourcePackagesSkipped": 0,
+		"sourceFilesFound": 2,
+		"sourceFilesWithExports": 1,
+		"sourceFilesSkipped": 0,
+		"exportsFound": 1,
+		"targetFilesFound": 2,
+		"targetFilesProcessed": 1,
+		"importsUpdated": 1,
+		"noChangesNeeded": 0,
+		"targetFilesSkipped": 1,
+		"importsMigrated": 1
+	},
+	"warnings": [
+		"Skipped /repo/apps/web/src/broken.ts: failed to parse: Missing semicolon. (1:38)"
+	],
+	"parseErrors": [
+		{
+			"filePath": "/repo/apps/web/src/broken.ts",
+			"message": "Missing semicolon. (1:38)"
+		}
+	],
+	"changedFiles": ["/repo/apps/web/src/calculator.ts"],
+	"skippedFiles": ["/repo/apps/web/src/index.ts"]
+}
+```
+
+| Field          | Description                                                                 |
+| -------------- | --------------------------------------------------------------------------- |
+| `mode`         | `apply` when files were written, `dry-run` when only previewed              |
+| `stats`        | All migration counters, matching the human-readable summary                 |
+| `warnings`     | Non-fatal problems, including every parse failure with its file path        |
+| `parseErrors`  | Files that could not be parsed, as `{ filePath, message }`                  |
+| `changedFiles` | Target files whose imports were rewritten (or would be, in dry-run)         |
+| `skippedFiles` | Target files left untouched, by `--ignore-target-files` or barrel detection |
 
 When arguments or flags are omitted, the CLI falls back to interactive prompts
 for the missing values only. Supplying the source path (and any flags) runs the
@@ -126,6 +183,9 @@ migrate-barrel-imports "libs/*" --include-barrels
 
 # Migrate specific packages
 migrate-barrel-imports "packages/{ui,core,utils}" --ignore-target-files "**/*.test.ts"
+
+# Machine-readable report for CI
+migrate-barrel-imports "libs/*" . --json --dry-run > report.json
 ```
 
 ## Contributing

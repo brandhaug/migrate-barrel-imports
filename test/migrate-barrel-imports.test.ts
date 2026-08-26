@@ -9,6 +9,7 @@ import {
 	type ExportInfo,
 	findExports,
 	migrateBarrelImports,
+	type MigrationResult,
 	resolveExportSource
 } from '../src/migrate-barrel-imports'
 import { defaultOptions, type Options } from '../src/options'
@@ -90,14 +91,14 @@ const cleanOutput = (content: string): string => {
 
 const runMigrateBarrelImports = async (
 	overrides: Partial<Options> = {}
-): Promise<void> => {
+): Promise<MigrationResult> => {
 	const options: Options = {
 		...defaultOptions,
 		sourcePath: overrides.sourcePath || 'source-path',
 		targetPath: overrides.targetPath || 'target-path',
 		...overrides
 	}
-	await migrateBarrelImports(options)
+	return await migrateBarrelImports(options)
 }
 
 describe.concurrent('migrate-barrel-imports', (): void => {
@@ -1852,6 +1853,173 @@ export { add, PI } from "@test/source-lib";
 		expect(lines.join('\n')).toContain(
 			`Skipping barrel file (use --include-barrels to rewrite it): ${barrelPath}`
 		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+})
+
+const createResultFixture = (
+	testName: string
+): TestSetup & { targetFilePath: string } => {
+	const setup = createTestSetup(testName)
+	const { sourceDir, targetDir } = setup
+
+	createPackageJson(sourceDir, '@test/source-lib')
+	createSourceFiles(sourceDir, {
+		'src/utils.ts': `
+export const add = (a: number, b: number): number => a + b;
+`,
+		'src/index.ts': `
+export * from "./utils";
+`
+	})
+
+	createPackageJson(targetDir, '@test/target-app', {
+		'@test/source-lib': '1.0.0'
+	})
+	const targetFilePath = path.join(targetDir, 'src/calculator.ts')
+	fs.writeFileSync(
+		targetFilePath,
+		`
+import { add } from "@test/source-lib";
+
+export const sum = add(1, 2);
+`
+	)
+
+	return { ...setup, targetFilePath }
+}
+
+describe('migration result', (): void => {
+	it('reports apply mode when dry-run is off', async () => {
+		const { monorepoDir, sourceDir } = createResultFixture('result-mode-apply')
+
+		const result = await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		expect(result.mode).toBe('apply')
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('reports dry-run mode when dry-run is on', async () => {
+		const { monorepoDir, sourceDir } = createResultFixture('result-mode-dry')
+
+		const result = await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true,
+			dryRun: true
+		})
+
+		expect(result.mode).toBe('dry-run')
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('reports every summary counter', async () => {
+		const { monorepoDir, sourceDir } = createResultFixture('result-summary')
+
+		const result = await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		expect(result.stats).toEqual({
+			sourcePackagesFound: 1,
+			sourcePackagesProcessed: 1,
+			sourcePackagesSkipped: 0,
+			sourceFilesFound: 2,
+			sourceFilesWithExports: 1,
+			sourceFilesSkipped: 0,
+			exportsFound: 1,
+			targetFilesFound: 1,
+			targetFilesProcessed: 1,
+			importsUpdated: 1,
+			noChangesNeeded: 0,
+			targetFilesSkipped: 0,
+			importsMigrated: 1
+		})
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('reports parse failures as warnings and parse errors that name the file', async () => {
+		const { monorepoDir, sourceDir, targetDir } =
+			createResultFixture('result-warnings')
+		const brokenFilePath = path.join(targetDir, 'src/broken.ts')
+		fs.writeFileSync(
+			brokenFilePath,
+			'import { add } from "@test/source-lib" {{{'
+		)
+
+		const result = await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		expect(
+			result.warnings.some((warning) => warning.includes(brokenFilePath))
+		).toBe(true)
+		expect(
+			result.parseErrors.some(
+				(parseError) => parseError.filePath === brokenFilePath
+			)
+		).toBe(true)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('lists changed target files and target files skipped by ignore patterns', async () => {
+		const { monorepoDir, sourceDir, targetFilePath, targetDir } =
+			createResultFixture('result-files')
+		const skippedFilePath = path.join(targetDir, 'src/skipped.ts')
+		fs.writeFileSync(
+			skippedFilePath,
+			`
+import { add } from "@test/source-lib";
+
+export const twice = add(2, 2);
+`
+		)
+
+		const result = await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true,
+			ignoreTargetFiles: ['**/skipped.ts']
+		})
+
+		expect(result.changedFiles).toEqual([targetFilePath])
+		expect(result.skippedFiles).toEqual([skippedFilePath])
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('lists barrel target files skipped by default', async () => {
+		const { monorepoDir, sourceDir, targetDir } =
+			createResultFixture('result-barrel-skip')
+		const barrelFilePath = path.join(targetDir, 'src/index.ts')
+		fs.writeFileSync(
+			barrelFilePath,
+			`
+export { add } from "@test/source-lib";
+`
+		)
+
+		const result = await runMigrateBarrelImports({
+			sourcePath: sourceDir,
+			targetPath: monorepoDir,
+			includeExtension: true
+		})
+
+		expect(result.skippedFiles).toContain(barrelFilePath)
+		expect(result.stats.targetFilesSkipped).toBeGreaterThan(0)
 
 		fs.rmSync(monorepoDir, { recursive: true, force: true })
 	})
