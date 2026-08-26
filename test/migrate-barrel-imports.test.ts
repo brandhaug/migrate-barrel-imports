@@ -1403,3 +1403,103 @@ describe.concurrent('resolveExportSource', (): void => {
 		expect(forward).toBe(reversed)
 	})
 })
+
+describe('migrate-barrel-imports dry-run diff', (): void => {
+	const dryRunSourceExports: Record<string, string> = {
+		'src/utils.ts': `
+export const add = (a: number, b: number): number => a + b;
+`,
+		'src/constants.ts': `
+export const PI = 3.14159;
+`,
+		'src/index.ts': `
+export * from "./utils";
+export * from "./constants";
+`
+	}
+
+	const dryRunTargetFile = {
+		path: 'src/calculator.ts',
+		content: `import { add, PI } from "@test/source-lib";
+
+export const calculateArea = (radius: number): number => {
+  return PI * add(radius, radius);
+};
+`
+	}
+
+	const setupDryRunFixture = (): {
+		monorepoDir: string
+		sourceDir: string
+		targetFilePath: string
+	} => {
+		const { monorepoDir, sourceDir, targetDir } =
+			createTestSetup('dry-run-diff')
+
+		createPackageJson(sourceDir, '@test/source-lib')
+		createSourceFiles(sourceDir, dryRunSourceExports)
+		createPackageJson(targetDir, '@test/target-app', {
+			'@test/source-lib': '1.0.0'
+		})
+
+		const targetFilePath = path.join(targetDir, dryRunTargetFile.path)
+		fs.writeFileSync(targetFilePath, dryRunTargetFile.content)
+
+		return { monorepoDir, sourceDir, targetFilePath }
+	}
+
+	const captureDryRunOutput = async (
+		sourceDir: string,
+		monorepoDir: string
+	): Promise<string> => {
+		const lines: string[] = []
+		const originalLog = console.log
+		console.log = (...args: unknown[]): void => {
+			lines.push(args.map((arg) => String(arg)).join(' '))
+		}
+
+		try {
+			await runMigrateBarrelImports({
+				sourcePath: sourceDir,
+				targetPath: monorepoDir,
+				includeExtension: true,
+				dryRun: true
+			})
+		} finally {
+			console.log = originalLog
+		}
+
+		return lines.join('\n')
+	}
+
+	it('prints a before/after diff of each changed import statement', async () => {
+		const { monorepoDir, sourceDir, targetFilePath } = setupDryRunFixture()
+
+		const output = await captureDryRunOutput(sourceDir, monorepoDir)
+
+		const headerPath = targetFilePath.replace(/^\/+/, '')
+		expect(output).toContain(`--- a/${headerPath}`)
+		expect(output).toContain(`+++ b/${headerPath}`)
+		expect(output).toContain('-import { add, PI } from "@test/source-lib";')
+		expect(output).toContain(
+			'+import { add } from "@test/source-lib/src/utils.ts";'
+		)
+		expect(output).toContain(
+			'+import { PI } from "@test/source-lib/src/constants.ts";'
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+
+	it('leaves file contents on disk unchanged', async () => {
+		const { monorepoDir, sourceDir, targetFilePath } = setupDryRunFixture()
+
+		await captureDryRunOutput(sourceDir, monorepoDir)
+
+		expect(fs.readFileSync(targetFilePath, 'utf-8')).toBe(
+			dryRunTargetFile.content
+		)
+
+		fs.rmSync(monorepoDir, { recursive: true, force: true })
+	})
+})

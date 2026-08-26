@@ -63,12 +63,27 @@ npx migrate-barrel-imports <source-path> [target-path] [options]
 | `--extension` / `--no-extension`   | Include file extensions in rewritten import paths             | `--extension` |
 | `--ignore-source-files <patterns>` | Comma-separated file patterns to ignore in source directories | _(none)_      |
 | `--ignore-target-files <patterns>` | Comma-separated file patterns to ignore in target directories | _(none)_      |
-| `--dry-run`                        | Preview changes without modifying files                       | off           |
+| `--dry-run`                        | Preview changes as a diff without modifying files             | off           |
 | `-h`, `--help`                     | Show help                                                     | —             |
 
 When arguments or flags are omitted, the CLI falls back to interactive prompts
 for the missing values only. Supplying the source path (and any flags) runs the
 migration fully non-interactive, which makes it usable in scripts and CI.
+
+### Dry run
+
+`--dry-run` writes nothing to disk. For each file it would change, it prints a
+compact unified-style diff of only the import statements that change, so you can
+review the migration before applying it:
+
+```diff
+[dry-run] Would update imports in packages/target-app/src/calculator.ts
+--- a/packages/target-app/src/calculator.ts
++++ b/packages/target-app/src/calculator.ts
+-import { add, PI } from "@test/source-lib";
++import { add } from "@test/source-lib/src/utils.ts";
++import { PI } from "@test/source-lib/src/constants.ts";
+```
 
 ### Examples
 
