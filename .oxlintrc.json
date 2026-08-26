@@ -304,10 +304,12 @@
 		{
 			// The migration walks files sequentially on purpose: findExports and
 			// findImports accumulate ordered results whose first-match-wins
-			// resolution must not race, and updateImports writes files that a later
-			// package may rewrite again, so concurrent awaits would corrupt both the
-			// resolution order and the write ordering.
-			"files": ["src/migrate-barrel-imports.ts"],
+			// resolution must not race, and migrate's orchestration loop
+			// interleaves barrel detection with the writes updateImports performs,
+			// which a later package may rewrite again, so concurrent awaits would
+			// corrupt both the resolution order and the write ordering. The module
+			// split kept each walk in the function that owned it.
+			"files": ["src/migrate.ts", "src/find-exports.ts", "src/find-imports.ts"],
 			"rules": {
 				"no-await-in-loop": "off"
 			}
