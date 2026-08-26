@@ -54,7 +54,6 @@ import { createLogger, type Logger } from './logger.js'
 import { type Options as MigrationOptions } from './options.js'
 
 /**
-/**
  * @property {string} source - Source file path containing exports
  * @property {string[]} exports - Array of exported names from the file
  * @property {boolean} [isIgnored] - Whether the file is ignored
@@ -278,12 +277,13 @@ const ENTRY_POINT_FILE_NAME_PATTERN =
 
 /**
  * A package.json entry-point declaration. `exports` is a recursive
- * string/array/object tree; `main` and `module` are plain strings.
+ * string/array/object tree; `main` and `module` are plain strings. Map
+ * values may be null in malformed manifests; the walk skips them.
  */
 type EntryPointSpec =
 	| string
 	| EntryPointSpec[]
-	| { [subpath: string]: EntryPointSpec }
+	| { [subpath: string]: EntryPointSpec | null }
 
 /** Fields in package.json that may declare an entry-point file. */
 const ENTRY_POINT_FIELDS = ['main', 'module', 'exports'] as const
@@ -320,12 +320,17 @@ async function getPackageEntryPoints(packagePath: string): Promise<string[]> {
 /**
  * Collects the file paths declared by an entry-point spec. A string is a
  * direct entry point; arrays and objects (subpath/condition maps) recurse.
+ * Malformed values (null, numbers, booleans) are skipped so one bad field
+ * never discards the entries a valid main/module already contributed.
  */
 function collectEntryPointSpecs(
-	spec: EntryPointSpec,
+	spec: EntryPointSpec | null,
 	packagePath: string,
 	entries: string[]
 ): void {
+	if (spec === null) {
+		return
+	}
 	if (typeof spec === 'string') {
 		entries.push(path.resolve(packagePath, spec))
 		return
@@ -1419,13 +1424,6 @@ export async function migrateBarrelImports(
 		logger.summary(`Target files failed: ${stats.targetFilesFailed}`)
 		logger.summary(`Total imports migrated: ${stats.importsMigrated}`)
 		logger.summary(`Files that could not be parsed: ${parseErrors.length}`)
-
-		if (parseErrors.length > 0) {
-			logger.summary('Unparseable files:')
-			parseErrors.forEach(({ filePath, message }) =>
-				logger.summary(`  - ${filePath}: ${message}`)
-			)
-		}
 
 		if (parseErrors.length > 0) {
 			logger.summary('Unparseable files:')

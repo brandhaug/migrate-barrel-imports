@@ -238,6 +238,7 @@
 		// no-array-reduce is off: the two reduces here fold a list into a single value
 		// (resolveExportSource's lexicographic pick, the exportsFound counter), and
 		// the callback reads more clearly than the for...of it would replace.
+		"unicorn/no-array-reduce": "off",
 		"unicorn/throw-new-error": "error",
 
 		// oxc rules
@@ -282,10 +283,14 @@
 		"anti-slop/no-object-parameters": "error",
 		"anti-slop/no-reflect-apply": "error",
 		"anti-slop/no-reflect-get": "error",
-		// Off: this is a plain-TS CLI with no schema library; package.json
-		// manifests and thrown errors are the only unknown data, and decoding
-		// them is a recursive string/array/object walk where `typeof` is the
-		// only discriminator. A type-guard exemption cannot cover the walk.
+		// Off: this is a plain-TS CLI with no schema library, and the only
+		// untyped input is package.json. Decoding its manifests needs runtime
+		// `typeof` discriminator checks, and the exemption this rule offers
+		// (type predicates) does not help: `no-unknown-parameters`, also from
+		// this plugin set, rejects the `unknown`-typed predicate parameter a
+		// JSON decoder has to start from. Errors are decoded with `instanceof
+		// Error`, which this rule does not touch. Revisit if a schema library
+		// is introduced.
 		"anti-slop/no-runtime-typeof": "off",
 		"anti-slop/no-shape-in-symbol-names": "error",
 		"anti-slop/no-unknown-parameters": "error",

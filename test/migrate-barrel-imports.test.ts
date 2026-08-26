@@ -1026,6 +1026,28 @@ export const VERSION = '1.0.0'
 
 		expect(await isBarrelFile({ filePath, packagePath })).toBe(false)
 	})
+
+	it('still treats the package main as a barrel when exports is malformed', async () => {
+		const filePath = createBarrelTestFile(
+			'src/entry.ts',
+			`export { Button } from './Button'
+export * from './helpers'
+
+export const VERSION = '1.0.0'
+`
+		)
+		const packagePath = path.resolve(path.dirname(filePath), '..')
+		fs.writeFileSync(
+			path.join(packagePath, 'package.json'),
+			JSON.stringify({
+				name: '@test/lib',
+				main: './src/entry.ts',
+				exports: { '.': null }
+			})
+		)
+
+		expect(await isBarrelFile({ filePath, packagePath })).toBe(true)
+	})
 })
 
 describe.concurrent('unparseable files', (): void => {
