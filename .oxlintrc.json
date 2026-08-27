@@ -22,6 +22,11 @@
 		"builtin": true
 	},
 	"ignorePatterns": ["node_modules/**", "dist/**"],
+	"options": {
+		// Type-aware linting for every oxlint invocation (bare `oxlint` included),
+		// matching the `--type-aware` flag in the package.json scripts.
+		"typeAware": true
+	},
 	"rules": {
 		// Core style and footguns, enabled as errors
 		"eqeqeq": "error",
