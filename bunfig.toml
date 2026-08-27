@@ -1,5 +1,3 @@
 [install]
 exact = true
 
-[test]
-timeout = 1000000000

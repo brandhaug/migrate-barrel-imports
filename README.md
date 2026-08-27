@@ -32,10 +32,10 @@ Requires [bun](https://bun.sh) >= 1.4.0.
 migrate-barrel-imports <source-path> [target-path] [options]
 ```
 
-| Argument      | Description                                                                    | Default                 |
-| ------------- | ------------------------------------------------------------------------------ | ----------------------- |
-| `source-path` | Directory scanned recursively for packages (e.g. `packages`). Not a glob        | _(required)_            |
-| `target-path` | Directory where imports should be migrated                                     | `.` (current directory) |
+| Argument      | Description                                                              | Default                 |
+| ------------- | ------------------------------------------------------------------------ | ----------------------- |
+| `source-path` | Directory scanned recursively for packages (e.g. `packages`). Not a glob | _(required)_            |
+| `target-path` | Directory where imports should be migrated                               | `.` (current directory) |
 
 `source-path` is validated as a real directory, not a glob. Passing a pattern such as `packages/*` fails with an error instead of silently finding nothing.
 
