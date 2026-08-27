@@ -2,11 +2,10 @@
 
 ## [4.0.1](https://github.com/brandhaug/migrate-barrel-imports/compare/v4.0.0...v4.0.1) (2026-08-26)
 
-
 ### Bug Fixes
 
-* **migrate:** derive changedFiles from updated files so each file is listed once ([#46](https://github.com/brandhaug/migrate-barrel-imports/issues/46)) ([f465e07](https://github.com/brandhaug/migrate-barrel-imports/commit/f465e07815611bbc2fff36e757c47dfea09bd114))
-* **migrate:** only exclude self-imports from the target scan ([#45](https://github.com/brandhaug/migrate-barrel-imports/issues/45)) ([3fda414](https://github.com/brandhaug/migrate-barrel-imports/commit/3fda414394734341388e08c54233779fd5194ab7))
+- **migrate:** derive changedFiles from updated files so each file is listed once ([#46](https://github.com/brandhaug/migrate-barrel-imports/issues/46)) ([f465e07](https://github.com/brandhaug/migrate-barrel-imports/commit/f465e07815611bbc2fff36e757c47dfea09bd114))
+- **migrate:** only exclude self-imports from the target scan ([#45](https://github.com/brandhaug/migrate-barrel-imports/issues/45)) ([3fda414](https://github.com/brandhaug/migrate-barrel-imports/commit/3fda414394734341388e08c54233779fd5194ab7))
 
 ## [4.0.0](https://github.com/brandhaug/migrate-barrel-imports/compare/v3.0.0...v4.0.0) (2026-08-26)
 
