@@ -32,8 +32,10 @@ import {
  */
 function getExportNames(
 	declaration: ExportNamedDeclaration['declaration']
-): string[] {
-	if (!declaration) return []
+): Array<string> {
+	if (!declaration) {
+		return []
+	}
 
 	if (isVariableDeclaration(declaration)) {
 		return declaration.declarations
@@ -83,10 +85,10 @@ export async function findExports({
 	ignoreSourceFiles = [],
 	stats,
 	parseErrors
-}: FindExportsParams): Promise<ExportInfo[]> {
-	const exports: ExportInfo[] = []
+}: FindExportsParams): Promise<Array<ExportInfo>> {
+	const exports: Array<ExportInfo> = []
 	const barrelFiles = new Set<string>()
-	const exportFiles: Record<string, string[]> = {}
+	const exportFiles: Record<string, Array<string>> = {}
 
 	logger.verbose(
 		`Scanning for TypeScript and JavaScript files in: ${packagePath}`
@@ -136,10 +138,10 @@ export async function findExports({
 		try {
 			const content = await readFile(fullPath, 'utf8')
 			const ast = parse(content, getBabelConfig(fullPath))
-			const fileExports: string[] = []
+			const fileExports: Array<string> = []
 			const reExports: Record<string, string> = {}
 			const fileExportSources: Record<string, string> = {}
-			const defaultExportNames: string[] = []
+			const defaultExportNames: Array<string> = []
 
 			traverse(ast, {
 				ExportNamedDeclaration(nodePath: NodePath<ExportNamedDeclaration>) {

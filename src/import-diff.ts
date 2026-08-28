@@ -17,7 +17,10 @@ interface FormatImportDiffParams {
 /**
  * Extracts the verbatim source text of every import statement in a file
  */
-function collectImportStatements(code: string, filePath: string): string[] {
+function collectImportStatements(
+	code: string,
+	filePath: string
+): Array<string> {
 	const ast = parse(code, getBabelConfig(filePath))
 
 	return ast.program.body
@@ -50,7 +53,9 @@ export function formatImportDiff({
 		(statement) => !beforeImports.includes(statement)
 	)
 
-	if (removed.length === 0 && added.length === 0) return ''
+	if (removed.length === 0 && added.length === 0) {
+		return ''
+	}
 
 	// Unified diff headers already carry the `a/`/`b/` prefix, so a leading
 	// separator on an absolute path would double it up

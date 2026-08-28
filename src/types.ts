@@ -13,13 +13,13 @@ import { createLogger, type Logger } from './logger.js'
  */
 export interface ExportInfo {
 	source: string
-	exports: string[]
+	exports: Array<string>
 	isIgnored?: boolean
 	reExports?: Record<string, string>
 	exportSources?: Record<string, string>
-	defaultExportNames?: string[]
+	defaultExportNames?: Array<string>
 	isBarrelFile?: boolean
-	exportFiles?: Record<string, string[]>
+	exportFiles?: Record<string, Array<string>>
 }
 
 /**
@@ -66,9 +66,9 @@ export interface IsBarrelFileParams {
 export interface FindExportsParams {
 	packagePath: string
 	logger?: Logger
-	ignoreSourceFiles?: string[]
+	ignoreSourceFiles?: Array<string>
 	stats?: MigrationStats
-	parseErrors?: ParseError[]
+	parseErrors?: Array<ParseError>
 }
 
 export interface FindImportsParams {
@@ -76,11 +76,11 @@ export interface FindImportsParams {
 	targetPath: string
 	targetGlob?: string
 	logger?: Logger
-	ignoreTargetFiles?: string[]
-	excludedPackagePaths?: string[]
+	ignoreTargetFiles?: Array<string>
+	excludedPackagePaths?: Array<string>
 	stats?: MigrationStats
-	parseErrors?: ParseError[]
-	skippedFiles?: string[]
+	parseErrors?: Array<ParseError>
+	skippedFiles?: Array<string>
 }
 
 /**
@@ -107,10 +107,10 @@ export interface ParseError {
 export interface MigrationResult {
 	mode: 'apply' | 'dry-run'
 	stats: MigrationStats
-	warnings: string[]
-	parseErrors: ParseError[]
-	changedFiles: string[]
-	skippedFiles: string[]
+	warnings: Array<string>
+	parseErrors: Array<ParseError>
+	changedFiles: Array<string>
+	skippedFiles: Array<string>
 }
 
 /**
@@ -120,8 +120,8 @@ export interface MigrationResult {
  * @property {string[]} skipped - Candidate files excluded by ignore patterns
  */
 export interface FindImportsResult {
-	files: string[]
-	skipped: string[]
+	files: Array<string>
+	skipped: Array<string>
 }
 
 export interface ImportSpec {
@@ -132,13 +132,13 @@ export interface ImportSpec {
 export interface UpdateImportsParams {
 	filePath: string
 	packageName: string
-	exports: ExportInfo[]
+	exports: Array<ExportInfo>
 	logger?: Logger
 	includeExtension?: boolean
 	dryRun?: boolean
-	warnings?: string[]
+	warnings?: Array<string>
 	stats?: MigrationStats
-	parseErrors?: ParseError[]
+	parseErrors?: Array<ParseError>
 }
 
 /**
@@ -168,14 +168,14 @@ export type ResolvedTarget =
 
 export interface ResolveTargetParams {
 	name: string
-	exports: ExportInfo[]
+	exports: Array<ExportInfo>
 	packageName: string
 	includeExtension: boolean
 }
 
 export interface ResolveExportSourceParams {
 	name: string
-	exports: ExportInfo[]
+	exports: Array<ExportInfo>
 }
 
 /** Logger used when a caller does not supply one. */
@@ -203,7 +203,7 @@ export function recordParseError({
 }: {
 	filePath: string
 	error: unknown
-	parseErrors?: ParseError[]
+	parseErrors?: Array<ParseError>
 	logger?: Logger
 }): void {
 	const message = error instanceof Error ? error.message : String(error)

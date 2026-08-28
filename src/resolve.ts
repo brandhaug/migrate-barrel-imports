@@ -30,7 +30,7 @@ export function resolveExportSource({
 	name,
 	exports
 }: ResolveExportSourceParams): string | undefined {
-	const candidates: string[] = []
+	const candidates: Array<string> = []
 	const barrelSources = new Set<string>()
 
 	for (const info of exports) {
@@ -47,7 +47,9 @@ export function resolveExportSource({
 		}
 	}
 
-	if (candidates.length === 0) return undefined
+	if (candidates.length === 0) {
+		return undefined
+	}
 
 	const mainFiles = candidates.filter(
 		(file) => !AUXILIARY_FILE_MARKERS.some((marker) => file.includes(marker))
@@ -88,8 +90,12 @@ function resolveTarget({
 	includeExtension
 }: ResolveTargetParams): ResolvedTarget {
 	const exportInfo = exports.find((e) => e.exports.includes(name))
-	if (!exportInfo) return { kind: 'drop' }
-	if (exportInfo.isIgnored) return { kind: 'keep' }
+	if (!exportInfo) {
+		return { kind: 'drop' }
+	}
+	if (exportInfo.isIgnored) {
+		return { kind: 'keep' }
+	}
 
 	// Re-exports from an external package keep pointing at that package
 	const reExportSource = exportInfo.reExports?.[name]
@@ -137,7 +143,7 @@ function resolveTarget({
  * @param {string} file - File exporting the name
  */
 function recordExportFile(
-	exportFiles: Record<string, string[]>,
+	exportFiles: Record<string, Array<string>>,
 	name: string,
 	file: string
 ): void {

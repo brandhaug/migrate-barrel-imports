@@ -16,8 +16,8 @@ export interface Options {
 	sourcePath: string
 	targetPath: string
 	targetGlob?: string
-	ignoreSourceFiles: string[]
-	ignoreTargetFiles: string[]
+	ignoreSourceFiles: Array<string>
+	ignoreTargetFiles: Array<string>
 	includeExtension?: boolean
 	includeBarrels?: boolean
 	dryRun?: boolean

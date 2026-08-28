@@ -28,7 +28,7 @@ interface TestCase {
 		path: string
 		content: string
 	}
-	expectedImports?: string[]
+	expectedImports?: Array<string>
 }
 
 // Helper functions
@@ -104,7 +104,7 @@ const runMigrateBarrelImports = async (
 
 describe.concurrent('migrate-barrel-imports', (): void => {
 	// Test cases
-	const testCases: TestCase[] = [
+	const testCases: Array<TestCase> = [
 		{
 			name: 'TS monorepo setup',
 			sourceExports: {
@@ -214,7 +214,7 @@ export const fetchWithRetry = async (endpoint) => {
 	})
 
 	// Special test cases for TypeScript features
-	const tsFeatureTests: TestCase[] = [
+	const tsFeatureTests: Array<TestCase> = [
 		{
 			name: 'TypeScript enums',
 			sourceExports: {
@@ -444,7 +444,7 @@ export const App = () => {
 	})
 
 	// Test cases for barrel file detection and handling
-	const barrelFileTests: TestCase[] = [
+	const barrelFileTests: Array<TestCase> = [
 		{
 			name: 'Multiple barrel files',
 			sourceExports: {
@@ -1226,9 +1226,9 @@ describe.concurrent('unparseable files', (): void => {
 			`import { add } from "@test/source-lib";\nconst broken = >>>;\n`
 		)
 
-		const lines: string[] = []
+		const lines: Array<string> = []
 		const originalLog = console.log
-		console.log = (...args: unknown[]): void => {
+		console.log = (...args: Array<unknown>): void => {
 			lines.push(args.map(String).join(' '))
 		}
 
@@ -1350,7 +1350,7 @@ export { WorkspaceOverviewDto } from './dto';
 export type { WorkspaceOverviewDto } from './dto';
 `
 		})
-		const lines: string[] = []
+		const lines: Array<string> = []
 
 		await findExports({
 			packagePath,
@@ -1389,7 +1389,7 @@ export type { WorkspaceOverviewDto } from './dto';
 	})
 })
 
-const buildDuplicatedExports = (files: string[]): ExportInfo[] =>
+const buildDuplicatedExports = (files: Array<string>): Array<ExportInfo> =>
 	files.map((source) => ({
 		source,
 		exports: ['Duplicated'],
@@ -1401,7 +1401,7 @@ describe.concurrent('resolveExportSource', (): void => {
 		const exportFiles = {
 			McpToolDescriptor: ['src/aggregate.ts', 'src/mcp-tool.ts']
 		}
-		const exports: ExportInfo[] = [
+		const exports: Array<ExportInfo> = [
 			{
 				source: 'src/aggregate.ts',
 				exports: ['McpToolDescriptor'],
@@ -1478,9 +1478,9 @@ export const calculateArea = (radius: number): number => {
 		sourceDir: string,
 		monorepoDir: string
 	): Promise<string> => {
-		const lines: string[] = []
+		const lines: Array<string> = []
 		const originalLog = console.log
-		console.log = (...args: unknown[]): void => {
+		console.log = (...args: Array<unknown>): void => {
 			lines.push(args.map(String).join(' '))
 		}
 
@@ -1534,7 +1534,7 @@ describe.concurrent('output verbosity', (): void => {
 	const runWithVerbosity = async (
 		testName: string,
 		verbosity: Verbosity
-	): Promise<string[]> => {
+	): Promise<Array<string>> => {
 		const { monorepoDir, sourceDir, targetDir } = createTestSetup(testName)
 
 		createPackageJson(sourceDir, '@test/source-lib')
@@ -1552,7 +1552,7 @@ describe.concurrent('output verbosity', (): void => {
 			'import { add } from "@test/source-lib";\nexport const double = (n: number): number => add(n, n);\n'
 		)
 
-		const lines: string[] = []
+		const lines: Array<string> = []
 		await migrateBarrelImports(
 			{
 				...defaultOptions,
@@ -1623,7 +1623,7 @@ describe.concurrent('output verbosity', (): void => {
 			'import { generatedExport0 } from "@test/source-lib";\nexport const value = generatedExport0;\n'
 		)
 
-		const lines: string[] = []
+		const lines: Array<string> = []
 		await migrateBarrelImports(
 			{
 				...defaultOptions,
@@ -1653,7 +1653,7 @@ describe.concurrent('output verbosity', (): void => {
 	const runDryRun = async (
 		testName: string,
 		verbosity: Verbosity
-	): Promise<string[]> => {
+	): Promise<Array<string>> => {
 		const { monorepoDir, sourceDir, targetDir } = createTestSetup(testName)
 
 		createPackageJson(sourceDir, '@test/source-lib')
@@ -1671,7 +1671,7 @@ describe.concurrent('output verbosity', (): void => {
 			'import { add } from "@test/source-lib";\nexport const double = (n: number): number => add(n, n);\n'
 		)
 
-		const lines: string[] = []
+		const lines: Array<string> = []
 		await migrateBarrelImports(
 			{
 				...defaultOptions,
@@ -1715,7 +1715,7 @@ describe.concurrent('output verbosity', (): void => {
 	const runWithUnparseableFile = async (
 		testName: string,
 		verbosity: Verbosity
-	): Promise<string[]> => {
+	): Promise<Array<string>> => {
 		const { monorepoDir, sourceDir, targetDir } = createTestSetup(testName)
 
 		createPackageJson(sourceDir, '@test/source-lib')
@@ -1734,7 +1734,7 @@ describe.concurrent('output verbosity', (): void => {
 			'import { add } from "@test/source-lib";\nexport const double = (n: number): number => add(n, n);\n'
 		)
 
-		const lines: string[] = []
+		const lines: Array<string> = []
 		await migrateBarrelImports(
 			{
 				...defaultOptions,
@@ -1854,7 +1854,7 @@ export { add, PI } from "@test/source-lib";
 			'barrel-target-stats'
 		)
 
-		const lines: string[] = []
+		const lines: Array<string> = []
 		const result = await migrateBarrelImports(
 			{
 				...defaultOptions,
@@ -2377,7 +2377,7 @@ interface StatsFixture {
 
 const createStatsFixture = (
 	testName: string,
-	libs: StatsFixtureLib[],
+	libs: Array<StatsFixtureLib>,
 	appFiles: Record<string, string>
 ): StatsFixture => {
 	const monorepoDir = path.join(

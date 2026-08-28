@@ -1,6 +1,6 @@
 {
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
-	"plugins": ["typescript", "unicorn", "oxc", "import"],
+	"plugins": ["typescript", "unicorn", "oxc", "import", "react"],
 	"jsPlugins": [
 		{
 			// Anti-slop rules vendored in ultracite, loaded the same way b2b-saas-starter
@@ -76,8 +76,12 @@
 		"no-useless-call": "error",
 		"prefer-object-has-own": "error",
 		"prefer-regex-literals": "error",
-		"curly": ["error", "multi-line"],
-		"no-unexpected-multiline": "off",
+		"curly": "error",
+		"no-unexpected-multiline": "error",
+		// Throw Error objects, never bare strings/values, so stack traces survive.
+		"no-throw-literal": "error",
+		// Only @nocommit markers are policed; plain TODOs are tracked elsewhere.
+		"no-warning-comments": ["error", { "terms": ["@nocommit"] }],
 		"no-else-return": ["error", { "allowElseIf": false }],
 		"no-lonely-if": "error",
 		"no-nested-ternary": "error",
@@ -85,7 +89,19 @@
 		"prefer-destructuring": ["error", { "array": false }],
 		"prefer-template": "error",
 		"default-param-last": "error",
-		"no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+		"no-unused-vars": [
+			"error",
+			{
+				"argsIgnorePattern": "^_",
+				"variables": "off",
+				// Unused imports auto-fix as safe fixes only (oxlint-specific option);
+				// other unused declarations stay suggestion-only.
+				"fix": { "imports": "safe-fix" }
+			}
+		],
+		// Named function expressions are allowed (hoisting/references); anonymous
+		// callbacks should be arrows.
+		"prefer-arrow-callback": ["error", { "allowNamedFunctions": true }],
 		// CLI prints the migration report and help to stdout; that is its job, not a
 		// debug leftover, so log/error are allowed and console.log used for report output.
 		"no-console": ["error", { "allow": ["log", "warn", "error"] }],
@@ -123,6 +139,8 @@
 		"@typescript-eslint/adjacent-overload-signatures": "error",
 		"@typescript-eslint/ban-tslint-comment": "error",
 		"@typescript-eslint/consistent-generic-constructors": "error",
+		// `Array<T>` everywhere, matching the generic type syntax used across src/.
+		"typescript/array-type": ["error", { "default": "generic" }],
 		"@typescript-eslint/consistent-indexed-object-style": ["error", "record"],
 		// Interfaces are the natural shape for exported object contracts here
 		// (Logger, Options, the result types), so prefer `interface`.
@@ -174,6 +192,7 @@
 		// never probe an unknown with `instanceof` when a message string will do,
 		// and always throw a new Error with a message.
 		"unicorn/catch-error-name": "error",
+		"unicorn/prefer-optional-catch-binding": "error",
 		"unicorn/consistent-existence-index-check": "error",
 		"unicorn/filename-case": "error",
 		"unicorn/new-for-builtins": "error",
@@ -202,8 +221,12 @@
 		"unicorn/numeric-separators-style": "error",
 		"unicorn/prefer-array-find": "error",
 		"unicorn/prefer-array-flat-map": "error",
+		"unicorn/prefer-array-index-of": "error",
 		"unicorn/prefer-array-some": "error",
+		"unicorn/prefer-at": "error",
 		"unicorn/prefer-date-now": "error",
+		"unicorn/no-hex-escape": "error",
+		"unicorn/prefer-import-meta-properties": "error",
 		"unicorn/prefer-logical-operator-over-ternary": "error",
 		"unicorn/prefer-native-coercion-functions": "error",
 		"unicorn/prefer-node-protocol": "error",
@@ -211,7 +234,9 @@
 		"unicorn/prefer-object-from-entries": "error",
 		"unicorn/prefer-regexp-test": "error",
 		"unicorn/prefer-set-has": "error",
+		"unicorn/prefer-single-call": "error",
 		"unicorn/prefer-spread": "error",
+		"unicorn/prefer-string-raw": "error",
 		"unicorn/prefer-string-replace-all": "error",
 		"unicorn/prefer-string-slice": "error",
 		"unicorn/require-array-join-separator": "error",
@@ -268,10 +293,16 @@
 		"oxc/only-used-in-recursion": "error",
 		"oxc/uninvoked-array-callback": "error",
 
+		// React plugin is enabled solely for require-render-return: this repo has
+		// no JSX today, but the rule keeps class components (if any ever appear)
+		// honest about returning from render.
+		"react/require-render-return": "error",
+
 		// Import hygiene. `no-self-import` and `no-duplicates` catch the two most
 		// common mistakes; `no-cycle` catches accidental barrel cycles, which matter
 		// to a tool whose whole purpose is eliminating them.
 		"import/consistent-type-specifier-style": ["error", "prefer-inline"],
+		"import/export": "error",
 		"import/no-cycle": "error",
 		"import/no-duplicates": "error",
 		"import/no-empty-named-blocks": "error",
