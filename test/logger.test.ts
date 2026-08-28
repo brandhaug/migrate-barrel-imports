@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 import { createLogger } from '../src/logger'
 
-const collect = (run: (write: (line: string) => void) => void): string[] => {
-	const lines: string[] = []
+const collect = (
+	run: (write: (line: string) => void) => void
+): Array<string> => {
+	const lines: Array<string> = []
 	run((line: string): void => {
 		lines.push(line)
 	})
@@ -124,7 +126,7 @@ describe('silent verbosity', (): void => {
 	})
 
 	it('still reports errors so diagnostics survive', (): void => {
-		const errors: string[] = []
+		const errors: Array<string> = []
 		createLogger({
 			verbosity: 'silent',
 			write: (): void => {},

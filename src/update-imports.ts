@@ -59,7 +59,7 @@ export async function updateImports({
 	try {
 		const content = await readFile(filePath, 'utf8')
 		const ast = parse(content, getBabelConfig(filePath))
-		const importDeclarations: ImportDeclaration[] = []
+		const importDeclarations: Array<ImportDeclaration> = []
 
 		// First pass: collect all import declarations
 		traverse(ast, {
@@ -71,14 +71,16 @@ export async function updateImports({
 			}
 		})
 
-		const importsBySource = new Map<string, ImportSpec[]>()
+		const importsBySource = new Map<string, Array<ImportSpec>>()
 		const remainingSpecifiers: Array<
 			ImportSpecifier | ImportDefaultSpecifier | ImportNamespaceSpecifier
 		> = []
 
 		for (const declaration of importDeclarations) {
 			for (const specifier of declaration.specifiers) {
-				if (!isImportSpecifier(specifier)) continue
+				if (!isImportSpecifier(specifier)) {
+					continue
+				}
 
 				const imported = specifier.imported
 				const importName = isIdentifier(imported)
@@ -91,7 +93,9 @@ export async function updateImports({
 					includeExtension
 				})
 
-				if (resolved.kind === 'drop') continue
+				if (resolved.kind === 'drop') {
+					continue
+				}
 
 				if (resolved.kind === 'keep') {
 					remainingSpecifiers.push(specifier)
@@ -122,7 +126,9 @@ export async function updateImports({
 					)
 
 					// Only add the import if it is not aliased or if we do not have the original import yet
-					if (isAliased && hasOriginalImport) continue
+					if (isAliased && hasOriginalImport) {
+						continue
+					}
 				}
 
 				if (!importsBySource.has(resolved.sourcePath)) {
@@ -148,7 +154,7 @@ export async function updateImports({
 		})
 
 		// Add new import declarations
-		const newImports: ImportDeclaration[] = []
+		const newImports: Array<ImportDeclaration> = []
 		for (const [source, specifiers] of importsBySource) {
 			if (specifiers.length > 0) {
 				newImports.push(
@@ -189,7 +195,7 @@ export async function updateImports({
 
 		for (const reExportPath of reExportPaths) {
 			const node = reExportPath.node
-			const exportsBySource = new Map<string, ExportSpecifier[]>()
+			const exportsBySource = new Map<string, Array<ExportSpecifier>>()
 			const remainingExportSpecifiers: ExportNamedDeclaration['specifiers'] = []
 			let movedCount = 0
 
@@ -225,9 +231,11 @@ export async function updateImports({
 				movedCount++
 			}
 
-			if (movedCount === 0) continue
+			if (movedCount === 0) {
+				continue
+			}
 
-			const replacements: ExportNamedDeclaration[] = []
+			const replacements: Array<ExportNamedDeclaration> = []
 			for (const [source, specifiers] of exportsBySource) {
 				const declaration = exportNamedDeclaration(
 					null,
@@ -271,7 +279,9 @@ export async function updateImports({
 					before: content,
 					after: output
 				})
-				if (diff) logger.info(diff)
+				if (diff) {
+					logger.info(diff)
+				}
 			} else {
 				await writeFile(filePath, output)
 				logger.verbose(`Writing changes to ${filePath}`)

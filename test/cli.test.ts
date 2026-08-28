@@ -8,7 +8,7 @@ import { parseCliArgs } from '../src/cli'
 const cliEntryPoint = path.join(import.meta.dir, '../src/index.ts')
 
 const runCli = async (
-	args: readonly string[],
+	args: ReadonlyArray<string>,
 	cwd?: string
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> => {
 	const proc = Bun.spawn(['bun', 'run', cliEntryPoint, ...args], {

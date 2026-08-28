@@ -95,7 +95,7 @@ async function findImports({
 		}
 
 		// Candidates that match an ignore pattern are skipped, not found
-		const skipped: string[] = []
+		const skipped: Array<string> = []
 		for (const file of allFiles) {
 			const relativePath = path.relative(targetPath, file)
 			if (
@@ -143,7 +143,7 @@ async function resolveScanDirectories(
 	targetPath: string,
 	targetGlob: string | undefined,
 	logger: Logger = defaultLogger
-): Promise<string[]> {
+): Promise<Array<string>> {
 	if (targetGlob === undefined || targetGlob.trim().length === 0) {
 		return [targetPath]
 	}
@@ -171,7 +171,7 @@ async function resolveScanDirectories(
  */
 function isInsideAnyDirectory(
 	filePath: string,
-	directories: readonly string[]
+	directories: ReadonlyArray<string>
 ): boolean {
 	const resolvedFile = path.resolve(filePath)
 

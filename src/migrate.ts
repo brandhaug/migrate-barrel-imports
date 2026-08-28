@@ -74,10 +74,10 @@ export async function migrateBarrelImports(
 	const updatedFiles = new Set<string>()
 
 	// Track warnings
-	const warnings: string[] = []
+	const warnings: Array<string> = []
 
 	// Track files that could not be parsed
-	const parseErrors: ParseError[] = []
+	const parseErrors: Array<ParseError> = []
 
 	if (dryRun) {
 		logger.info('[dry-run] Running in dry-run mode, no files will be modified')
@@ -281,7 +281,7 @@ async function getPackageName(packagePath: string): Promise<string | null> {
 async function findSourcePackages(
 	sourcePath: string,
 	logger: Logger = defaultLogger
-): Promise<string[]> {
+): Promise<Array<string>> {
 	// Use a local variable instead of reassigning the parameter
 	const resolvedPath = path.isAbsolute(sourcePath)
 		? path.resolve(sourcePath)

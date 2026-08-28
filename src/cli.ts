@@ -24,7 +24,7 @@ export type CliArgs = Partial<Omit<Options, 'targetPath'>> & {
  * `--ignore-target-files <patterns>`, `--dry-run`, `--quiet` / `--verbose`,
  * `--json`.
  */
-export function parseCliArgs(argv: readonly string[]): CliArgs {
+export function parseCliArgs(argv: ReadonlyArray<string>): CliArgs {
 	const {
 		args: withoutNegation,
 		noExtension,
@@ -146,14 +146,14 @@ function resolveVerbosityFlag(
 
 /** Positionals and negation flags pulled out of argv before parseArgs runs. */
 interface NegatedFlags {
-	args: string[]
+	args: Array<string>
 	noExtension: boolean
 	noIncludeBarrels: boolean
 	noDryRun: boolean
 }
 
-function extractNegations(argv: readonly string[]): NegatedFlags {
-	const args: string[] = []
+function extractNegations(argv: ReadonlyArray<string>): NegatedFlags {
+	const args: Array<string> = []
 	let noExtension = false
 	let noIncludeBarrels = false
 	let noDryRun = false
@@ -173,7 +173,7 @@ function extractNegations(argv: readonly string[]): NegatedFlags {
 	return { args, noExtension, noIncludeBarrels, noDryRun }
 }
 
-function splitPatterns(value: string | undefined): string[] | undefined {
+function splitPatterns(value: string | undefined): Array<string> | undefined {
 	if (value === undefined) {
 		return undefined
 	}
@@ -246,11 +246,15 @@ async function resolveIncludeExtension(
 	})
 }
 
-function resolveIgnoreSourceFiles(cliValue: string[] | undefined): string[] {
+function resolveIgnoreSourceFiles(
+	cliValue: Array<string> | undefined
+): Array<string> {
 	return cliValue ?? defaultOptions.ignoreSourceFiles
 }
 
-function resolveIgnoreTargetFiles(cliValue: string[] | undefined): string[] {
+function resolveIgnoreTargetFiles(
+	cliValue: Array<string> | undefined
+): Array<string> {
 	return cliValue ?? defaultOptions.ignoreTargetFiles
 }
 
@@ -312,7 +316,7 @@ export interface MainOptions {
 }
 
 export async function main(
-	argv: readonly string[] = process.argv.slice(2),
+	argv: ReadonlyArray<string> = process.argv.slice(2),
 	{ isInteractive = process.stdin.isTTY }: MainOptions = {}
 ): Promise<void> {
 	const args = parseCliArgs(argv)

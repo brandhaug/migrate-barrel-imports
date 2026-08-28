@@ -28,7 +28,7 @@ const ENTRY_POINT_FILE_NAME_PATTERN =
  */
 type EntryPointSpec =
 	| string
-	| EntryPointSpec[]
+	| Array<EntryPointSpec>
 	| { [subpath: string]: EntryPointSpec | null }
 
 /** Fields in package.json that may declare an entry-point file. */
@@ -43,13 +43,15 @@ interface PackageManifest {
 /**
  * Collects the entry-point file paths a package declares via main, module and exports
  */
-async function getPackageEntryPoints(packagePath: string): Promise<string[]> {
+async function getPackageEntryPoints(
+	packagePath: string
+): Promise<Array<string>> {
 	try {
 		const manifest: PackageManifest = JSON.parse(
 			await readFile(path.join(packagePath, 'package.json'), 'utf8')
 		)
 
-		const entries: string[] = []
+		const entries: Array<string> = []
 		for (const field of ENTRY_POINT_FIELDS) {
 			const spec = manifest[field]
 			if (spec !== undefined) {
@@ -72,7 +74,7 @@ async function getPackageEntryPoints(packagePath: string): Promise<string[]> {
 function collectEntryPointSpecs(
 	spec: EntryPointSpec | null,
 	packagePath: string,
-	entries: string[]
+	entries: Array<string>
 ): void {
 	if (spec === null) {
 		return
@@ -107,7 +109,7 @@ function isEntryPointFileName(filePath: string): boolean {
  */
 export async function isBarrelFile(
 	{ filePath, packagePath, logger = defaultLogger }: IsBarrelFileParams,
-	parseErrors?: ParseError[]
+	parseErrors?: Array<ParseError>
 ): Promise<boolean> {
 	try {
 		const content = await readFile(filePath, 'utf8')
@@ -117,7 +119,9 @@ export async function isBarrelFile(
 		let otherStatementCount = 0
 
 		for (const statement of ast.program.body) {
-			if (isImportDeclaration(statement)) continue
+			if (isImportDeclaration(statement)) {
+				continue
+			}
 
 			if (
 				isExportAllDeclaration(statement) ||
@@ -130,15 +134,21 @@ export async function isBarrelFile(
 			otherStatementCount++
 		}
 
-		if (reExportCount === 0) return false
+		if (reExportCount === 0) {
+			return false
+		}
 
 		// Entry-point files re-exporting anything are barrels regardless of content
-		if (isEntryPointFileName(filePath)) return true
+		if (isEntryPointFileName(filePath)) {
+			return true
+		}
 
 		if (packagePath) {
 			const entryPoints = await getPackageEntryPoints(packagePath)
 			const resolvedPath = path.resolve(filePath)
-			if (entryPoints.includes(resolvedPath)) return true
+			if (entryPoints.includes(resolvedPath)) {
+				return true
+			}
 		}
 
 		// Otherwise substantially all statements must be pure re-exports
