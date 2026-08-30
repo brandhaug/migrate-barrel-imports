@@ -1,3 +1,6 @@
+// fallow-ignore-file unused-file
+// Reason: executed directly by `bun test`; not reachable from the bin entry
+// point, so the reachability analysis flags it as unused.
 import { describe, expect, it } from 'bun:test'
 import { formatImportDiff } from '../src/import-diff'
 

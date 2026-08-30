@@ -185,4 +185,4 @@ function isInsideAnyDirectory(
 	})
 }
 
-export { findImports, resolveScanDirectories, isInsideAnyDirectory }
+export { findImports }
