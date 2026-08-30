@@ -48,7 +48,8 @@
     "format:check": "oxfmt --check",
     "prepare": "git config core.hooksPath .githooks",
     "test": "bun test --isolate",
-    "validate": "npm run lint && npm run format:check && npm run test"
+    "dead-code": "fallow dead-code --fail-on-regression",
+    "validate": "npm run lint && npm run format:check && npm run test && npm run dead-code"
   },
   "dependencies": {
     "@babel/generator": "8.0.0",
