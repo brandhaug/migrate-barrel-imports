@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.0.1](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.0...migrate-barrel-imports-v5.0.1) (2026-08-30)
+
+
+### Miscellaneous
+
+* **deps:** bump @types/node from 26.2.0 to 26.3.0 ([#58](https://github.com/brandhaug/migrate-barrel-imports/issues/58)) ([42d6146](https://github.com/brandhaug/migrate-barrel-imports/commit/42d6146f1ece0fd9a45b304a85c8de5bfff111f2))
+* **deps:** bump @types/node from 26.3.0 to 26.4.0 ([#60](https://github.com/brandhaug/migrate-barrel-imports/issues/60)) ([bf7e819](https://github.com/brandhaug/migrate-barrel-imports/commit/bf7e8191c5054b3acc8f9649b342914b4ea3ae60))
+* **deps:** bump oxlint from 1.79.0 to 1.80.0 ([#54](https://github.com/brandhaug/migrate-barrel-imports/issues/54)) ([0d4a8fc](https://github.com/brandhaug/migrate-barrel-imports/commit/0d4a8fc1f39000dacdc2985d4e69ccecb0f45155))
+* **deps:** bump ultracite from 7.10.6 to 7.10.7 ([#61](https://github.com/brandhaug/migrate-barrel-imports/issues/61)) ([966a4f3](https://github.com/brandhaug/migrate-barrel-imports/commit/966a4f36b1670d0b24884458f722ea3ff3b586fb))
+* enable strict oxlint rules and fix violations ([#56](https://github.com/brandhaug/migrate-barrel-imports/issues/56)) ([fa4b55c](https://github.com/brandhaug/migrate-barrel-imports/commit/fa4b55c1fb7dcac1dbcf7dc28d2b77287ec0fd31))
+* remove dead code and unused dependencies surfaced by fallow ([#64](https://github.com/brandhaug/migrate-barrel-imports/issues/64)) ([2206a22](https://github.com/brandhaug/migrate-barrel-imports/commit/2206a22a98ad921806c8376a1dc5967c771558be))
+
 ## [5.0.0](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v4.0.1...migrate-barrel-imports-v5.0.0) (2026-08-27)
 
 ### ⚠ BREAKING CHANGES
