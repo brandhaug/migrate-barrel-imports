@@ -25,10 +25,10 @@ export interface CreateLoggerOptions {
 }
 
 /** Maximum length of a single log line before it is truncated. */
-export const MAX_LOG_LINE_LENGTH = 500
+const MAX_LOG_LINE_LENGTH = 500
 
 /** Shortens a log line that would otherwise flood the terminal. */
-export function truncateLine(line: string): string {
+function truncateLine(line: string): string {
 	if (line.length <= MAX_LOG_LINE_LENGTH) {
 		return line
 	}

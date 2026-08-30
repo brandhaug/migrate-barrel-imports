@@ -10,10 +10,4 @@ export { isBarrelFile } from './barrel.js'
 export { findExports } from './find-exports.js'
 export { migrateBarrelImports } from './migrate.js'
 export { resolveExportSource } from './resolve.js'
-export type {
-	ExportInfo,
-	IsBarrelFileParams,
-	MigrationResult,
-	MigrationStats,
-	ParseError
-} from './types.js'
+export type { ExportInfo, MigrationResult, MigrationStats } from './types.js'
