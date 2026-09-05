@@ -24,7 +24,7 @@ npm install -g migrate-barrel-imports
 npx migrate-barrel-imports <source-path> [target-path] [options]
 ```
 
-Requires [bun](https://bun.sh) >= 1.4.0.
+Requires [bun](https://bun.sh) >= 1.4.2.
 
 ## Usage
 
