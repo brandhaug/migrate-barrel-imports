@@ -1,5 +1,15 @@
 # Changelog
 
+## [5.0.2](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.1...migrate-barrel-imports-v5.0.2) (2026-09-05)
+
+
+### Miscellaneous
+
+* **deps:** bump @types/node from 26.4.0 to 26.4.1 ([#66](https://github.com/brandhaug/migrate-barrel-imports/issues/66)) ([7c682aa](https://github.com/brandhaug/migrate-barrel-imports/commit/7c682aa30fa15d594a1877a6b3f7c5bcf3bcc3ba))
+* **deps:** bump oxfmt from 0.65.0 to 0.66.0 ([#67](https://github.com/brandhaug/migrate-barrel-imports/issues/67)) ([bfd4bb3](https://github.com/brandhaug/migrate-barrel-imports/commit/bfd4bb3437d2bade6404a496bd194ecf7dcd6670))
+* **deps:** bump oxlint from 1.80.0 to 1.81.0 ([#68](https://github.com/brandhaug/migrate-barrel-imports/issues/68)) ([f701aca](https://github.com/brandhaug/migrate-barrel-imports/commit/f701aca595a7949dd8310a50061ccdb6da047f4c))
+* upgrade bun to 1.4.2 ([#70](https://github.com/brandhaug/migrate-barrel-imports/issues/70)) ([001bc18](https://github.com/brandhaug/migrate-barrel-imports/commit/001bc1874a632f508dd2e9fe1ceb4c2d6d5a980c))
+
 ## [5.0.1](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.0...migrate-barrel-imports-v5.0.1) (2026-08-30)
 
 
