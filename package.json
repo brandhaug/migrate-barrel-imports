@@ -72,9 +72,9 @@
     "ultracite": "catalog:"
   },
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.2"
   },
-  "packageManager": "bun@1.4.0",
+  "packageManager": "bun@1.4.2",
   "catalog": {
     "@types/babel__generator": "7.27.0",
     "@types/babel__traverse": "7.28.0",
