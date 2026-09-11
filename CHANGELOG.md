@@ -1,5 +1,15 @@
 # Changelog
 
+## [5.0.3](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.2...migrate-barrel-imports-v5.0.3) (2026-09-11)
+
+
+### Miscellaneous
+
+* **deps:** bump oxfmt from 0.66.0 to 0.67.0 ([#74](https://github.com/brandhaug/migrate-barrel-imports/issues/74)) ([be51f87](https://github.com/brandhaug/migrate-barrel-imports/commit/be51f871b102cf9bc0c6377450e89eae2a28e191))
+* **deps:** bump oxlint from 1.81.0 to 1.82.0 ([#75](https://github.com/brandhaug/migrate-barrel-imports/issues/75)) ([4a6569b](https://github.com/brandhaug/migrate-barrel-imports/commit/4a6569bb1583de025bc11fc5368da209c4169701))
+* **deps:** bump ultracite from 7.10.7 to 7.10.8 ([#71](https://github.com/brandhaug/migrate-barrel-imports/issues/71)) ([926b279](https://github.com/brandhaug/migrate-barrel-imports/commit/926b2795895340e93d353c6834243cd212ee580d))
+* **deps:** bump ultracite from 7.10.8 to 7.11.0 ([#73](https://github.com/brandhaug/migrate-barrel-imports/issues/73)) ([b93290c](https://github.com/brandhaug/migrate-barrel-imports/commit/b93290c71b61d81f062006933a9f31df1af34c2e))
+
 ## [5.0.2](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.1...migrate-barrel-imports-v5.0.2) (2026-09-05)
 
 
