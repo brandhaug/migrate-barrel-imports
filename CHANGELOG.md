@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.6](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.5...migrate-barrel-imports-v5.0.6) (2026-10-02)
+
+
+### Miscellaneous
+
+* **deps:** bump ultracite from 7.12.1 to 7.12.2 ([#93](https://github.com/brandhaug/migrate-barrel-imports/issues/93)) ([06bddd9](https://github.com/brandhaug/migrate-barrel-imports/commit/06bddd959de39e32f681b60664b62a0cf283330a))
+
 ## [5.0.5](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.4...migrate-barrel-imports-v5.0.5) (2026-10-01)
 
 
