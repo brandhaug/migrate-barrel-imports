@@ -79,7 +79,7 @@
 		"@types/babel__generator": "7.27.0",
 		"@types/babel__traverse": "7.28.0",
 		"@types/micromatch": "4.0.10",
-		"@types/node": "26.6.3",
+		"@types/node": "26.6.4",
 		"oxfmt": "0.71.0",
 		"oxlint": "1.86.0",
 		"oxlint-tsgolint": "7.0.2003",
