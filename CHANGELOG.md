@@ -1,5 +1,28 @@
 # Changelog
 
+## [5.0.6](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.5...migrate-barrel-imports-v5.0.6) (2026-10-17)
+
+
+### Bug Fixes
+
+* **security:** override 1 vulnerable transitive dependency ([#96](https://github.com/brandhaug/migrate-barrel-imports/issues/96)) ([03659a2](https://github.com/brandhaug/migrate-barrel-imports/commit/03659a2359377b0e3f1f6a6df1a9b4e5bbd9117a))
+
+
+### Miscellaneous
+
+* **deps:** bump @types/node from 26.6.3 to 26.6.4 ([#95](https://github.com/brandhaug/migrate-barrel-imports/issues/95)) ([3c6f1c6](https://github.com/brandhaug/migrate-barrel-imports/commit/3c6f1c68d38d6dd0d8fbf89ef07a38c9a4c13fb0))
+* **deps:** bump @types/node from 26.6.4 to 26.6.5 ([#101](https://github.com/brandhaug/migrate-barrel-imports/issues/101)) ([0b95c13](https://github.com/brandhaug/migrate-barrel-imports/commit/0b95c132772cb4bdea763ba728315359da4660b9))
+* **deps:** bump oxfmt from 0.71.0 to 0.72.0 ([#97](https://github.com/brandhaug/migrate-barrel-imports/issues/97)) ([dda9c1e](https://github.com/brandhaug/migrate-barrel-imports/commit/dda9c1e6907cc3ff2071c490d47ef91e93ca9aee))
+* **deps:** bump oxfmt from 0.72.0 to 0.73.0 ([#104](https://github.com/brandhaug/migrate-barrel-imports/issues/104)) ([6b2daff](https://github.com/brandhaug/migrate-barrel-imports/commit/6b2daff634bb82ee4561c8d7fd338ed4203d2f21))
+* **deps:** bump oxlint from 1.86.0 to 1.87.0 ([#98](https://github.com/brandhaug/migrate-barrel-imports/issues/98)) ([ad00dcb](https://github.com/brandhaug/migrate-barrel-imports/commit/ad00dcb9e9f3e30b664ada3a7a86675c7ad5d289))
+* **deps:** bump oxlint from 1.87.0 to 1.88.0 ([#105](https://github.com/brandhaug/migrate-barrel-imports/issues/105)) ([6376d40](https://github.com/brandhaug/migrate-barrel-imports/commit/6376d40028790bedaa0b2b006843bfb233ddac4f))
+* **deps:** bump oxlint-tsgolint from 7.0.2003 to 7.0.2004 ([#102](https://github.com/brandhaug/migrate-barrel-imports/issues/102)) ([a2b820a](https://github.com/brandhaug/migrate-barrel-imports/commit/a2b820a0b237a2952093a0ac911f8699a6e874a2))
+* **deps:** bump ultracite from 7.12.1 to 7.12.2 ([#93](https://github.com/brandhaug/migrate-barrel-imports/issues/93)) ([06bddd9](https://github.com/brandhaug/migrate-barrel-imports/commit/06bddd959de39e32f681b60664b62a0cf283330a))
+* **deps:** bump ultracite from 7.12.2 to 7.12.3 ([#99](https://github.com/brandhaug/migrate-barrel-imports/issues/99)) ([1c03ee7](https://github.com/brandhaug/migrate-barrel-imports/commit/1c03ee77f48293dc38f6e217bfc56108537078e0))
+* **deps:** bump ultracite from 7.12.3 to 7.12.4 ([#100](https://github.com/brandhaug/migrate-barrel-imports/issues/100)) ([a8829b3](https://github.com/brandhaug/migrate-barrel-imports/commit/a8829b367da92b2bba9c715bbd76903cf4c8986f))
+* **deps:** bump ultracite from 7.12.4 to 8.0.0 ([#103](https://github.com/brandhaug/migrate-barrel-imports/issues/103)) ([05168e6](https://github.com/brandhaug/migrate-barrel-imports/commit/05168e69d26de3faa1d4dae2d059aec13cfbcdf1))
+* **deps:** bump ultracite from 8.0.0 to 8.0.1 ([#106](https://github.com/brandhaug/migrate-barrel-imports/issues/106)) ([d463249](https://github.com/brandhaug/migrate-barrel-imports/commit/d4632494e68ef949c4325ec6f8e602d56bbaf13c))
+
 ## [5.0.5](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.4...migrate-barrel-imports-v5.0.5) (2026-10-01)
 
 
