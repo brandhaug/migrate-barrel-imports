@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.7](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.6...migrate-barrel-imports-v5.0.7) (2026-10-20)
+
+
+### Miscellaneous
+
+* **deps:** group coupled catalog updates ([#108](https://github.com/brandhaug/migrate-barrel-imports/issues/108)) ([0856b78](https://github.com/brandhaug/migrate-barrel-imports/commit/0856b78dec9fc9369affa282025e826ae0405ac8))
+
 ## [5.0.6](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.5...migrate-barrel-imports-v5.0.6) (2026-10-20)
 
 
