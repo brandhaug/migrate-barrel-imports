@@ -42,6 +42,7 @@
 	},
 	"scripts": {
 		"build": "tsc",
+		"typecheck": "bun check",
 		"start": "node dist/index.js",
 		"lint": "oxlint --type-aware",
 		"format": "oxfmt --write",
@@ -49,7 +50,7 @@
 		"prepare": "git config core.hooksPath .githooks",
 		"test": "bun test --isolate",
 		"dead-code": "fallow dead-code --fail-on-regression",
-		"validate": "npm run lint && npm run format:check && npm run test && npm run dead-code"
+		"validate": "npm run lint && npm run format:check && npm run typecheck && npm run test && npm run dead-code"
 	},
 	"dependencies": {
 		"@babel/generator": "8.0.0",
@@ -71,10 +72,13 @@
 		"typescript": "catalog:",
 		"ultracite": "catalog:"
 	},
-	"engines": {
-		"bun": ">=1.4.2"
+	"overrides": {
+		"source-map-js@>=1.0.0 <1.2.2": "1.2.2"
 	},
-	"packageManager": "bun@1.4.2",
+	"engines": {
+		"bun": ">=1.4.3"
+	},
+	"packageManager": "bun@1.4.3",
 	"catalog": {
 		"@types/babel__generator": "7.27.0",
 		"@types/babel__traverse": "7.28.0",
@@ -85,8 +89,5 @@
 		"oxlint-tsgolint": "7.0.2004",
 		"typescript": "7.0.2",
 		"ultracite": "8.0.1"
-	},
-	"overrides": {
-		"source-map-js@>=1.0.0 <1.2.2": "1.2.2"
 	}
 }

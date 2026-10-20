@@ -24,7 +24,7 @@ npm install -g migrate-barrel-imports
 npx migrate-barrel-imports <source-path> [target-path] [options]
 ```
 
-Requires [bun](https://bun.sh) >= 1.4.2.
+Requires [bun](https://bun.sh) >= 1.4.3.
 
 ## Usage
 
@@ -155,8 +155,9 @@ cd migrate-barrel-imports
 bun install
 bun test
 npm run build    # tsc -> dist/
+npm run typecheck # bun check, no output files
 npm run lint     # oxlint
-npm run validate # lint + format check + test
+npm run validate # lint + format check + typecheck + test + dead-code
 ```
 
 ## License
