@@ -1,6 +1,6 @@
 import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
-import fg from 'fast-glob'
+import { glob } from 'tinyglobby'
 import { isBarrelFile } from './barrel.js'
 import { findExports } from './find-exports.js'
 import { findImports } from './find-imports.js'
@@ -291,7 +291,8 @@ async function findSourcePackages(
 
 	await assertSourceDirectory(sourcePath, resolvedPath)
 
-	const packageJsonFiles = await fg('{package.json,**/package.json}', {
+	const packageJsonFiles = await glob('{package.json,**/package.json}', {
+		expandDirectories: false,
 		cwd: resolvedPath,
 		ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'],
 		absolute: true

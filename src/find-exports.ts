@@ -15,8 +15,8 @@ import {
 	isTSTypeAliasDeclaration,
 	isVariableDeclaration
 } from '@babel/types'
-import fg from 'fast-glob'
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
+import { glob } from 'tinyglobby'
 import { getBabelConfig } from './babel-config.js'
 import { isBarrelFile } from './barrel.js'
 import { recordExportFile } from './resolve.js'
@@ -93,7 +93,8 @@ export async function findExports({
 	logger.verbose(
 		`Scanning for TypeScript and JavaScript files in: ${packagePath}`
 	)
-	const allFiles = await fg('**/*.{ts,tsx,js,jsx}', {
+	const allFiles = await glob('**/*.{ts,tsx,js,jsx}', {
+		expandDirectories: false,
 		cwd: packagePath,
 		ignore: ['**/node_modules/**', '**/dist/**', '**/build/**']
 	})
@@ -121,7 +122,7 @@ export async function findExports({
 	for (const file of allFiles) {
 		// Mark files that match ignore patterns but still process them
 		const isIgnored = ignoreSourceFiles.some((pattern) =>
-			micromatch.isMatch(file, pattern)
+			picomatch.isMatch(file, pattern)
 		)
 		if (isIgnored) {
 			logger.verbose(

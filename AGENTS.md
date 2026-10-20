@@ -1,10 +1,10 @@
 # AGENTS.md
 
-`migrate-barrel-imports` — CLI that rewrites barrel imports (`index.ts` re-exports) to direct module imports in JS/TS monorepos. TypeScript (ES2020, ESM). Babel for AST, Commander for CLI, fast-glob for matching.
+`migrate-barrel-imports` — CLI that rewrites barrel imports (`index.ts` re-exports) to direct module imports in JS/TS monorepos. TypeScript (ES2020, ESM). Babel for AST, tinyglobby for discovery, picomatch for ignore patterns.
 
 ## Tooling
 
-- **Bun** (>= 1.4.2) — package manager + test runner (`packageManager: "bun@1.4.2"`, engines `bun >= 1.4.2`). No npm lockfile; use `bun.lock`.
+- **Bun** (>= 1.4.3) — package manager, type checker, and test runner. No npm lockfile; use `bun.lock`.
 - Source in `src/`, tests in `test/` (mirror their source file, e.g. `test/cli.test.ts`).
 
 ## Setup
@@ -17,10 +17,11 @@ npm run prepare   # sets core.hooksPath to .githooks
 ## Local dev
 
 - Build: `npm run build` (`tsc` → `dist/`)
+- Typecheck: `npm run typecheck` (`bun check`, no output files)
 - Run CLI: `npm start` or `node dist/index.js`
 - Test: `bun test` (CI uses `npm run test` = `bun test --isolate`)
 - Lint: `npm run lint`; format: `npm run format`
-- Full check: `npm run validate` (lint + format:check + test)
+- Full check: `npm run validate` (lint + format:check + typecheck + test + dead-code)
 - Pre-commit hook (`.githooks/pre-commit`): `npx oxfmt --write && npx oxlint --fix --type-aware`
 
 ## Commit & Release
