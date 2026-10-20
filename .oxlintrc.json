@@ -3,10 +3,9 @@
 	"plugins": ["typescript", "unicorn", "oxc", "import", "react"],
 	"jsPlugins": [
 		{
-			// Anti-slop rules vendored in ultracite, loaded the same way b2b-saas-starter
-			// does. The plugin is copy-the-source, not published to npm.
+			// Bundle and license copied unchanged from ultracite 8.0.1.
 			"name": "anti-slop",
-			"specifier": "./node_modules/ultracite/config/oxlint/anti-slop/plugin.mjs"
+			"specifier": "./vendor/anti-slop/plugin.mjs"
 		}
 	],
 	"categories": {
@@ -21,7 +20,7 @@
 		"es2024": true,
 		"builtin": true
 	},
-	"ignorePatterns": ["node_modules/**", "dist/**"],
+	"ignorePatterns": ["node_modules/**", "dist/**", "vendor/**"],
 	"options": {
 		// Type-aware linting for every oxlint invocation (bare `oxlint` included),
 		// matching the `--type-aware` flag in the package.json scripts.

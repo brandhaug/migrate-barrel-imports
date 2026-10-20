@@ -6,8 +6,8 @@ import {
 	type ExportNamedDeclaration,
 	type ImportDeclaration
 } from '@babel/types'
-import fg from 'fast-glob'
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
+import { glob } from 'tinyglobby'
 import { getBabelConfig } from './babel-config.js'
 import { type Logger } from './logger.js'
 import {
@@ -22,7 +22,7 @@ import {
  * Finds all files in the monorepo that import from a specific package
  *
  * This function:
- * 1. Uses fast-glob to find all TypeScript files
+ * 1. Uses tinyglobby to find all TypeScript files
  * 2. Parses each file's AST to find imports
  * 3. Handles both direct package imports and subpath imports
  * 4. Excludes node_modules, dist, and build directories
@@ -51,7 +51,8 @@ async function findImports({
 		)
 		const scanned = await Promise.all(
 			scanDirectories.map((directory) =>
-				fg(['**/*.{ts,tsx,js,jsx}'], {
+				glob(['**/*.{ts,tsx,js,jsx}'], {
+					expandDirectories: false,
 					cwd: directory,
 					absolute: true,
 					ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'],
@@ -100,7 +101,7 @@ async function findImports({
 			const relativePath = path.relative(targetPath, file)
 			if (
 				ignoreTargetFiles.some((pattern) =>
-					micromatch.isMatch(relativePath, pattern)
+					picomatch.isMatch(relativePath, pattern)
 				)
 			) {
 				logger.verbose(`File matches ignore pattern, skipping: ${relativePath}`)
@@ -148,7 +149,8 @@ async function resolveScanDirectories(
 		return [targetPath]
 	}
 
-	const directories = await fg(targetGlob, {
+	const directories = await glob(targetGlob, {
+		expandDirectories: false,
 		cwd: targetPath,
 		absolute: true,
 		onlyDirectories: true,

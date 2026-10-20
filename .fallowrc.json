@@ -3,7 +3,8 @@
 	"rules": {
 		"circular-dependencies": "error"
 	},
-	"ignoreDependencies": ["ultracite"],
+	"ignorePatterns": ["vendor/**"],
+	"entry": ["test/glob-behavior.test.ts"],
 	"regression": {
 		"baseline": {
 			"analysisIdentity": {

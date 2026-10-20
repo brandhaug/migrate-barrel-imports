@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`migrate-barrel-imports` — CLI that rewrites barrel imports (`index.ts` re-exports) to direct module imports in JS/TS monorepos. TypeScript (ES2020, ESM). Babel for AST, Commander for CLI, fast-glob for matching.
+`migrate-barrel-imports` — CLI that rewrites barrel imports (`index.ts` re-exports) to direct module imports in JS/TS monorepos. TypeScript (ES2020, ESM). Babel for AST, tinyglobby for discovery, picomatch for ignore patterns.
 
 ## Tooling
 
