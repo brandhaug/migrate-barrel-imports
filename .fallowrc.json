@@ -4,7 +4,7 @@
 		"circular-dependencies": "error"
 	},
 	"ignorePatterns": ["vendor/**"],
-	"entry": ["test/glob-behavior.test.ts"],
+	"entry": ["test/*.test.ts"],
 	"regression": {
 		"baseline": {
 			"analysisIdentity": {
