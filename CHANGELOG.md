@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.9](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.8...migrate-barrel-imports-v5.0.9) (2026-10-22)
+
+
+### Miscellaneous
+
+* **deps:** bump oxc dependencies ([#111](https://github.com/brandhaug/migrate-barrel-imports/issues/111)) ([350a2f3](https://github.com/brandhaug/migrate-barrel-imports/commit/350a2f34f897f8721b26a962297f846a1b750e27))
+
 ## [5.0.8](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.7...migrate-barrel-imports-v5.0.8) (2026-10-22)
 
 
