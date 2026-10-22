@@ -4,7 +4,7 @@
 
 ## Tooling
 
-- **Bun** (>= 1.4.3) — package manager, type checker, and test runner. No npm lockfile; use `bun.lock`.
+- **Bun** (>= 1.4.4) — package manager, type checker, and test runner. No npm lockfile; use `bun.lock`.
 - Source in `src/`, tests in `test/` (mirror their source file, e.g. `test/cli.test.ts`).
 
 ## Setup
