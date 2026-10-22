@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.8](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.7...migrate-barrel-imports-v5.0.8) (2026-10-22)
+
+
+### Miscellaneous
+
+* **tooling:** upgrade Bun to 1.4.4 ([#110](https://github.com/brandhaug/migrate-barrel-imports/issues/110)) ([0a2a520](https://github.com/brandhaug/migrate-barrel-imports/commit/0a2a520f9122b7d89698df2788e0ba0a11b5d52c))
+
 ## [5.0.7](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.6...migrate-barrel-imports-v5.0.7) (2026-10-20)
 
 
