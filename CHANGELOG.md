@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.0.10](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.9...migrate-barrel-imports-v5.0.10) (2026-10-30)
+
+
+### Miscellaneous
+
+* **deps:** bump oxc dependencies ([#116](https://github.com/brandhaug/migrate-barrel-imports/issues/116)) ([03422e5](https://github.com/brandhaug/migrate-barrel-imports/commit/03422e5e142b9dc403ffa793eb097aceaab4e308))
+* **deps:** bump oxlint-tsgolint from 7.0.2004 to 7.0.2005 ([#114](https://github.com/brandhaug/migrate-barrel-imports/issues/114)) ([ede0cd6](https://github.com/brandhaug/migrate-barrel-imports/commit/ede0cd6a8faab7ed2ddd1545022d666f57b33e0e))
+
 ## [5.0.9](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.8...migrate-barrel-imports-v5.0.9) (2026-10-22)
 
 
