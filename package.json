@@ -80,9 +80,9 @@
 		"@types/babel__traverse": "7.28.0",
 		"@types/picomatch": "4.0.3",
 		"@types/node": "26.6.6",
-		"oxfmt": "0.76.0",
-		"oxlint": "1.91.0",
-		"oxlint-tsgolint": "7.0.2005",
+		"oxfmt": "0.77.0",
+		"oxlint": "1.92.0",
+		"oxlint-tsgolint": "7.0.2006",
 		"typescript": "7.0.2"
 	}
 }
