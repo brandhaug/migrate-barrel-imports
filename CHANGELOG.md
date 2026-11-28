@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.0.11](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.10...migrate-barrel-imports-v5.0.11) (2026-11-28)
+
+
+### Miscellaneous
+
+* **deps:** bump @types/node from 26.6.6 to 26.6.10 ([#127](https://github.com/brandhaug/migrate-barrel-imports/issues/127)) ([e439dc6](https://github.com/brandhaug/migrate-barrel-imports/commit/e439dc6bcd0597d15051bd906d5e70e74bb8cde9))
+* **deps:** bump oxc dependencies ([#125](https://github.com/brandhaug/migrate-barrel-imports/issues/125)) ([0225ae7](https://github.com/brandhaug/migrate-barrel-imports/commit/0225ae78c05b3cced7791f8c7d052ff9ce9f1be8))
+
 ## [5.0.10](https://github.com/brandhaug/migrate-barrel-imports/compare/migrate-barrel-imports-v5.0.9...migrate-barrel-imports-v5.0.10) (2026-11-24)
 
 
